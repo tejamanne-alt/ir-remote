@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.irremote"
+    namespace = "com.astradite.irremote"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,9 +15,8 @@ android {
     }
 
     defaultConfig {
-        // Placeholder until {{PUBLISHER}} is supplied (docs/OPEN_QUESTIONS.md Q1).
-        // tools/scripts/release_checks.sh fails release builds while it is com.example.
-        applicationId = "com.example.irremote"
+        // {{BUNDLE_ID}}: same ID on both stores (docs/DECISIONS.md ADR-002).
+        applicationId = "com.astradite.irremote"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // {{MIN_ANDROID_API}} = 26 (support choice; ConsumerIrManager exists from API 19).

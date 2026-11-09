@@ -6,9 +6,9 @@
       irdb issue link recorded in THIRD_PARTY.md
 - [ ] (script) `dart run check_licenses` passes; THIRD_PARTY.md matches the
       in-app Licenses screen
-- [ ] (script) bundle ID is not a `com.example` placeholder
+- [x] (script) bundle ID is `com.astradite.irremote`, not a placeholder
 - [ ] (script) no brand logo assets in the app bundle
-- [ ] (script) only `{{PUBLISHER}}` appears as an organization name
+- [ ] (script) only Astradite appears as an organization name
 - [ ] (manual) "Not affiliated" line in About and in the listings
 - [ ] (manual) firmware source and LGPL notice published with the bridge release
 - [ ] (manual) App Review video recorded (app_review_video.md)

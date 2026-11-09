@@ -1,4 +1,4 @@
-package com.example.irremote
+package com.astradite.irremote
 
 import android.content.Context
 import android.content.pm.PackageManager

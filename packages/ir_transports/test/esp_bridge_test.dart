@@ -22,6 +22,7 @@ final class FakeBridge {
   bool silent = false;
   String? rawInfo;
   int lastContentLength = -1;
+  bool closeUnauthorizedAfterUpgrade = false;
   bool lastChunked = false;
 
   Uri get uri => Uri.parse('http://127.0.0.1:${_server.port}');
@@ -85,6 +86,12 @@ final class FakeBridge {
       return _json(r, 200, {'token': _token});
     }
     if (path == '/v1/ws') {
+      if (!authed && closeUnauthorizedAfterUpgrade) {
+        // esp_http_server firmware: upgrade first, then close with 1008.
+        final s = await WebSocketTransformer.upgrade(r);
+        await s.close(1008, 'unauthorized');
+        return;
+      }
       if (!authed) return _error(r, 401, 'unauthorized');
       socket = await WebSocketTransformer.upgrade(r);
       return;
@@ -375,5 +382,16 @@ void main() {
 
   test('learn without a token fails cleanly', () async {
     await expectLater(client.learn()!, emitsError(anything));
+  });
+
+  test('a 1008 close after the upgrade surfaces as unauthorized', () async {
+    bridge.closeUnauthorizedAfterUpgrade = true;
+    client.token = 'ffffffffffffffffffffffffffffffff';
+    await expectLater(
+      client.learn()!,
+      emitsError(
+        isA<BridgeException>().having((e) => e.code, 'code', 'unauthorized'),
+      ),
+    );
   });
 }

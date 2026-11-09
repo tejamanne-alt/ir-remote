@@ -3,15 +3,12 @@
 Each question has options and a recommendation. Work that does not depend on
 it continues.
 
-## Q1. Publisher and bundle ID ({{PUBLISHER}}, {{BUNDLE_ID}})
+## Q1. Publisher and bundle ID: resolved 2026-11-09
 
-**Needed by:** M8 (store builds); earlier for signed betas.
-**Status:** open. Code uses the placeholder `com.example.irremote`.
-**Options:** (a) supply the publisher name and domain, so the app becomes
-`<reversed domain>.irremote` on both stores; (b) keep the placeholder for
-internal builds only.
-**Recommendation:** (a) before any external build. The release check fails
-while `com.example` remains.
+The owner supplied the package name `com.astradite.irremote`. It is now the
+Android `applicationId` and namespace and the iOS bundle identifier (same ID
+family on both stores). The publisher name is taken as **Astradite**, from
+the reversed domain; please correct it if the legal name differs.
 
 ## Q2. AC encoder licensing route (gate L2)
 

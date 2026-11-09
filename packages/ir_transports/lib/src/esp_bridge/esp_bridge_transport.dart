@@ -384,7 +384,9 @@ final class EspBridgeTransport implements IrTransport {
                   controller.add(s);
                   if (!continuous) unawaited(stop());
                 case 'learn_timeout':
-                  controller.addError(const LearnTimeoutException());
+                  if (!controller.isClosed) {
+                    controller.addError(const LearnTimeoutException());
+                  }
                   unawaited(stop(remote: false));
                 case 'learn_stopped':
                   unawaited(stop(remote: false));
@@ -393,10 +395,25 @@ final class EspBridgeTransport implements IrTransport {
               }
             },
             onError: (Object e) {
-              controller.addError(e);
+              if (!controller.isClosed) controller.addError(e);
               unawaited(stop(remote: false));
             },
-            onDone: () => unawaited(stop(remote: false)),
+            onDone: () {
+              // The reference firmware completes the upgrade and then closes
+              // with 1008 when the token is missing or unknown.
+              if (!closed &&
+                  !controller.isClosed &&
+                  socket?.closeCode == 1008) {
+                controller.addError(
+                  const BridgeException(
+                    401,
+                    'unauthorized',
+                    'the hub no longer recognises this phone; pair it again',
+                  ),
+                );
+              }
+              unawaited(stop(remote: false));
+            },
           );
           await _request(
             'POST',
@@ -404,7 +421,9 @@ final class EspBridgeTransport implements IrTransport {
             body: {'timeoutMs': continuous ? 0 : learnTimeout.inMilliseconds},
           );
         } on Object catch (e) {
-          controller.addError(e);
+          // The socket may already have closed the stream (for example a
+          // 1008 close right after the upgrade); report only the first error.
+          if (!closed && !controller.isClosed) controller.addError(e);
           await stop(remote: false);
         }
       },

@@ -10,4 +10,5 @@ _Last updated: 2026-11-09._
   address. No personal data is sent.
 - Crash reporting is off unless you turn it on. When it is on, reports
   exclude personal data.
-- Contact: {{PUBLISHER}} support address (pending).
+- Publisher: Astradite. Contact: support address to be added before
+  publication.

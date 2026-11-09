@@ -1,4 +1,4 @@
-package com.example.irremote
+package com.astradite.irremote
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

@@ -28,12 +28,10 @@ been verified on real hardware; every human gate is pending (see
 
 ## Blocked on human
 
-- Q1: publisher name and bundle ID (placeholder `com.example.irremote`).
 - Q2, Q3, H4: AC licensing route, brand list, captured frames.
 - Q6: open the irdb announcement issue, then record its link in THIRD_PARTY.md.
 - Q8: Apple multicast entitlement (Account Holder).
-- Q12–Q14: bridge firmware licence (LGPL-3.0 web server), setup-AP
-  password, signed OTA.
+- Q13–Q14: bridge setup-AP password, signed OTA.
 - H1–H3: test hardware (an Android phone with an emitter, a Broadlink RM4
   mini, an ESP32 with a 940 nm LED, a transistor and a 38 kHz receiver).
 
@@ -97,3 +95,27 @@ APK, iOS no-codesign build, firmware host tests, `pio test -e native`, and
 
 Next session starts with: the first nightly emulator and simulator runs
 (integration test plus instrumented test).
+
+## Session 2 — 2026-11-09
+
+Milestone: F1 rework (web server licence) and release identity. M0 to M2 and
+F1 gates still pass.
+
+Done:
+- App ID is `com.astradite.irremote` on Android (namespace, applicationId,
+  Kotlin package) and iOS (bundle identifier); OPEN_QUESTIONS Q1 resolved
+- Bridge web server moved from ESPAsyncWebServer/AsyncTCP (LGPL-3.0) to
+  ESP-IDF esp_http_server (Apache-2.0), part of the Arduino core; no LGPL-3.0
+  code remains (ADR-025, Q12 resolved). New portable helpers (status lines,
+  form decoding) have host tests; the glue was syntax-checked against the
+  real ESP-IDF 5.5 headers
+- Bridge client: a 1008 close after the WebSocket upgrade reports
+  "unauthorized"; fixed a crash when a later error hit an already-closed
+  learn stream
+- release_checks.sh: the L4 check no longer mistakes flipperdevices/irdb for
+  probonopd/irdb; all scripted release checks pass
+
+Gates: inner pass · outer 2 findings (closed-stream crash, L4 false positive;
+both fixed) · F1 via CI `pio run -e esp32dev`
+
+Next session starts with: the first nightly emulator and simulator runs.

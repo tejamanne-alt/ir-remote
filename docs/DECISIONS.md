@@ -27,9 +27,9 @@ flutter_test pins (1.31.1). Codegen versions are capped by that analyzer.
 ## ADR-002: Unfilled variables use their defaults
 
 `{{APP_NAME}}`: working name `irremote` in code, display name "IR Remote"
-until M8. `{{PUBLISHER}}` was not supplied, so the bundle ID is the
-placeholder `com.example.irremote` (OPEN_QUESTIONS Q1). The release check
-fails while it remains. `{{PRIMARY_MARKET}}` en-IN (strings in
+until M8. `{{PUBLISHER}}`: **Astradite**, with `{{BUNDLE_ID}}`
+`com.astradite.irremote` on both stores (supplied by the owner on 2026-11-09;
+before that it was the placeholder `com.example.irremote`). `{{PRIMARY_MARKET}}` en-IN (strings in
 `app_en.arb`), `{{MIN_ANDROID_API}}` 26, `{{MIN_IOS}}` 17.0, brand lists as
 given, no monetization, no analytics.
 

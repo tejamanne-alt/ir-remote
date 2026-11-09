@@ -1,4 +1,4 @@
-# Store listings (draft; display name and publisher pending Q1)
+# Store listings (draft; publisher Astradite, app ID `com.astradite.irremote`)
 
 ## App Store (iPhone)
 
