@@ -141,6 +141,44 @@ void main() {
       expect(() => FlipperIr.parse(ok.toString()), throwsFormatException);
     });
 
+    test('caps fields per signal and per file, failing fast', () {
+      // Near 5 MiB of empty fields in one block. Before the cap, every line
+      // became a field record first (about 220 MiB) and the block was then
+      // merely skipped.
+      final oneBlock = StringBuffer('${_header}name: A\n');
+      while (oneBlock.length < FlipperIr.maxInputLength - 3) {
+        oneBlock.write('a:\n');
+      }
+      final input = oneBlock.toString();
+      final sw = Stopwatch()..start();
+      expect(() => FlipperIr.parse(input), throwsFormatException);
+      expect(sw.elapsedMilliseconds, lessThan(500));
+
+      // Many small blocks with undefined fields: the file-wide cap.
+      final many = StringBuffer(_header);
+      const perBlock = FlipperIr.maxFieldsPerSignal;
+      for (var n = 0; n * perBlock <= FlipperIr.maxFields; n++) {
+        many.write('name: K$n\n');
+        for (var f = 1; f < perBlock; f++) {
+          many.write('${'x' * f}: 1\n');
+        }
+      }
+      expect(() => FlipperIr.parse(many.toString()), throwsFormatException);
+
+      // At the per-signal cap a block still parses (undefined fields are
+      // ignored).
+      final full = StringBuffer(
+        '${_header}name: A\ntype: parsed\nprotocol: NEC\n'
+        'address: 04 00 00 00\ncommand: 08 00 00 00\n',
+      );
+      for (var f = 5; f < FlipperIr.maxFieldsPerSignal; f++) {
+        full.write('unknown_${'x' * f}: 1\n');
+      }
+      expect(FlipperIr.parse(full.toString()).signals, hasLength(1));
+      full.write('one_more: 1\n');
+      expect(() => FlipperIr.parse(full.toString()), throwsFormatException);
+    });
+
     test('reports bad blocks and keeps the rest', () {
       final b = StringBuffer(_header)
         ..write(_parsed('Good', 'NEC', '04 00 00 00', '08 00 00 00'))

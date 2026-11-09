@@ -165,6 +165,14 @@ abstract final class FlipperIr {
   /// Longest line accepted, in characters.
   static const int maxLineLength = 16 * 1024;
 
+  /// Most fields accepted in one signal block, `name` included. The format
+  /// defines eight; the rest of the room is for fields it does not define,
+  /// which are ignored.
+  static const int maxFieldsPerSignal = 32;
+
+  /// Most fields accepted in one file, header and `name` lines included.
+  static const int maxFields = 100000;
+
   /// Accepted `Filetype` values.
   static const Set<String> fileTypes = {'IR signals file', 'IR library file'};
 
@@ -202,17 +210,27 @@ abstract final class FlipperIr {
   ///
   /// Throws [FormatException] (and nothing else) when the file as a whole is
   /// unusable: too large, a missing or unsupported header, a line that is
-  /// not `key: value`, a field before the first `name`, or more than
-  /// [maxSignals] signal blocks. Problems confined to one signal block skip
-  /// that block and are reported in [FlipperParseResult.skipped]. Fields
-  /// the format does not define are ignored.
+  /// not `key: value`, a field before the first `name`, more than
+  /// [maxSignals] signal blocks, or more than [maxFieldsPerSignal] fields in
+  /// a block or [maxFields] in the file. Problems confined to one signal
+  /// block skip that block and are reported in [FlipperParseResult.skipped].
+  /// Fields the format does not define are ignored.
+  ///
+  /// Lines are read one at a time and each block is converted as soon as
+  /// it ends, so memory stays proportional to the signals, not the lines.
   static FlipperParseResult parse(String text) {
     if (text.length > maxInputLength) {
       throw const FormatException('Flipper file is larger than 5 MiB');
     }
-    final fields = <_Field>[];
+    String? filetype;
+    var versionSeen = false;
+    var totalFields = 0;
+    var blockCount = 0;
+    final block = <_Field>[];
+    final signals = <FlipperSignal>[];
+    final skipped = <FlipperSkipped>[];
     var lineNo = 0;
-    for (final raw in const LineSplitter().convert(text)) {
+    for (final raw in LineSplitter.split(text)) {
       lineNo++;
       if (raw.length > maxLineLength) {
         throw FormatException('line $lineNo is too long');
@@ -227,108 +245,119 @@ abstract final class FlipperIr {
       if (!_key.hasMatch(key)) {
         throw FormatException('line $lineNo: invalid field name');
       }
-      fields.add((
+      if (++totalFields > maxFields) {
+        throw const FormatException('more than $maxFields fields in one file');
+      }
+      final f = (
         key: key,
         value: line.substring(colon + 1).trim(),
         line: lineNo,
-      ));
-    }
-    if (fields.length < 2 ||
-        fields[0].key != 'Filetype' ||
-        fields[1].key != 'Version') {
-      throw const FormatException(
-        'missing "Filetype" and "Version" header lines',
       );
-    }
-    final filetype = fields[0].value;
-    if (!fileTypes.contains(filetype)) {
-      throw FormatException('unsupported Filetype "$filetype"');
-    }
-    if (fields[1].value != '1') {
-      throw FormatException('unsupported Version "${fields[1].value}"');
-    }
-
-    final blocks = <List<_Field>>[];
-    for (var i = 2; i < fields.length; i++) {
-      final f = fields[i];
-      if (f.key == 'name') {
-        if (blocks.length >= maxSignals) {
+      if (filetype == null) {
+        if (f.key != 'Filetype') throw _missingHeader;
+        if (!fileTypes.contains(f.value)) {
+          throw FormatException('unsupported Filetype "${f.value}"');
+        }
+        filetype = f.value;
+      } else if (!versionSeen) {
+        if (f.key != 'Version') throw _missingHeader;
+        if (f.value != '1') {
+          throw FormatException('unsupported Version "${f.value}"');
+        }
+        versionSeen = true;
+      } else if (f.key == 'name') {
+        if (blockCount >= maxSignals) {
           throw const FormatException('more than 10000 signals in one file');
         }
-        blocks.add([f]);
-      } else if (blocks.isEmpty) {
+        if (block.isNotEmpty) _convert(block, signals, skipped);
+        block
+          ..clear()
+          ..add(f);
+        blockCount++;
+      } else if (block.isEmpty) {
         throw FormatException('line ${f.line}: field before the first name');
+      } else if (block.length >= maxFieldsPerSignal) {
+        throw FormatException(
+          'line ${f.line}: more than $maxFieldsPerSignal fields in one signal',
+        );
       } else {
-        blocks.last.add(f);
+        block.add(f);
       }
     }
-
-    final signals = <FlipperSignal>[];
-    final skipped = <FlipperSkipped>[];
-    for (final block in blocks) {
-      final head = block.first;
-      final name = head.value;
-      String? protocol;
-      try {
-        if (name.isEmpty || _control.hasMatch(name)) {
-          throw const _Skip(FlipperSkipReason.malformedField, 'invalid name');
-        }
-        final byKey = <String, String>{};
-        for (final f in block.skip(1)) {
-          if (byKey.containsKey(f.key)) {
-            throw _Skip(
-              FlipperSkipReason.malformedField,
-              'duplicate field "${f.key}"',
-            );
-          }
-          byKey[f.key] = f.value;
-        }
-        String req(String k) =>
-            byKey[k] ??
-            (throw _Skip(
-              FlipperSkipReason.malformedField,
-              'missing field "$k"',
-            ));
-        final type = req('type');
-        final KeyCode code;
-        switch (type) {
-          case 'parsed':
-            protocol = req('protocol');
-            code = _mapOrSkip(
-              protocol,
-              _hexBytes(req('address'), 'address'),
-              _hexBytes(req('command'), 'command'),
-            );
-          case 'raw':
-            code = _raw(req('frequency'), byKey['duty_cycle'], req('data'));
-          default:
-            throw _Skip(FlipperSkipReason.unknownType, 'type "$type"');
-        }
-        signals.add(
-          FlipperSignal(
-            line: head.line,
-            name: name,
-            code: code,
-            source: type == 'raw' ? 'raw' : protocol!,
-          ),
-        );
-      } on _Skip catch (e) {
-        skipped.add(
-          FlipperSkipped(
-            line: head.line,
-            name: name,
-            reason: e.reason,
-            protocol: protocol,
-            detail: e.detail,
-          ),
-        );
-      }
-    }
+    if (filetype == null || !versionSeen) throw _missingHeader;
+    if (block.isNotEmpty) _convert(block, signals, skipped);
     return FlipperParseResult(
       filetype: filetype,
       signals: signals,
       skipped: skipped,
     );
+  }
+
+  static const FormatException _missingHeader = FormatException(
+    'missing "Filetype" and "Version" header lines',
+  );
+
+  /// Converts one signal block (its `name` field first) into a signal or a
+  /// skip record.
+  static void _convert(
+    List<_Field> block,
+    List<FlipperSignal> signals,
+    List<FlipperSkipped> skipped,
+  ) {
+    final head = block.first;
+    final name = head.value;
+    String? protocol;
+    try {
+      if (name.isEmpty || _control.hasMatch(name)) {
+        throw const _Skip(FlipperSkipReason.malformedField, 'invalid name');
+      }
+      final byKey = <String, String>{};
+      for (final f in block.skip(1)) {
+        if (byKey.containsKey(f.key)) {
+          throw _Skip(
+            FlipperSkipReason.malformedField,
+            'duplicate field "${f.key}"',
+          );
+        }
+        byKey[f.key] = f.value;
+      }
+      String req(String k) =>
+          byKey[k] ??
+          (throw _Skip(FlipperSkipReason.malformedField, 'missing field "$k"'));
+      final type = req('type');
+      final KeyCode code;
+      switch (type) {
+        case 'parsed':
+          protocol = req('protocol');
+          code = _mapOrSkip(
+            protocol,
+            _hexBytes(req('address'), 'address'),
+            _hexBytes(req('command'), 'command'),
+          );
+        case 'raw':
+          code = _raw(req('frequency'), byKey['duty_cycle'], req('data'));
+        default:
+          throw _Skip(FlipperSkipReason.unknownType, 'type "$type"');
+      }
+      signals.add(
+        FlipperSignal(
+          line: head.line,
+          name: name,
+          code: code,
+          source: type == 'raw' ? 'raw' : protocol!,
+        ),
+      );
+    } on _Skip catch (e) {
+      skipped.add(
+        FlipperSkipped(
+          line: head.line,
+          name: name,
+          reason: e.reason,
+          protocol: protocol,
+          detail: e.detail,
+        ),
+      );
+    }
   }
 
   /// Maps one parsed Flipper signal, given its little-endian [address] and

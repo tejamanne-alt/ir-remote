@@ -14,6 +14,11 @@
 ///   RC6 {36k,444,msb}<-1,1|1,-1>(6,-2,1:1,0:3,<-2,2|2,-2>(T:1),D:8,F:8,^107m)+
 ///
 /// Hold-to-repeat resends the same frame with the same toggle value.
+///
+/// End of frame: the frame always lasts 52t (23.1 ms) of the 107 ms period,
+/// so 83.9 ms of silence follows it. The decoder requires that gap (within
+/// the tolerance) or the end of the capture after the frame's last half-bit;
+/// more half-bits there mean the frame is the prefix of a longer one.
 library;
 
 import '../signal/ir_signal.dart';
@@ -22,6 +27,47 @@ import 'timing.dart';
 
 const int _t = 444;
 const int _period = 107000;
+
+/// Slots of t after the leader: start (2), mode (6), trailer (4), D (16)
+/// and F (16).
+const int _slots = 44;
+
+/// Bits after the leader: start, three mode bits, trailer, 8 D and 8 F.
+const int _bits = 21;
+
+/// Shortest gap after a frame (see the library comment): 83912 us.
+const int _minGapUs = _period - (8 + _slots) * _t;
+
+/// Half-bit width of bit [i] after the leader, in t: the trailer (toggle)
+/// bit is double width.
+int _width(int i) => i == 4 ? 2 : 1;
+
+/// The value of the bit whose first half starts at slot [pos], or `null` if
+/// its halves are not one level each, opposite to each other. A 1 is mark
+/// then space.
+int? _bitAt(List<bool> levels, int pos, int width) {
+  final first = levels[pos];
+  for (var k = 0; k < 2 * width; k++) {
+    if (levels[pos + k] != (k < width ? first : !first)) return null;
+  }
+  return first ? 1 : 0;
+}
+
+/// Whether the complete bits of a partial expansion are valid: biphase
+/// halves, a start bit of 1 and mode 0.
+bool _viable(List<bool> levels) {
+  var pos = 0;
+  for (var i = 0; i < _bits; i++) {
+    final w = _width(i);
+    if (pos + 2 * w > levels.length) return true;
+    final bit = _bitAt(levels, pos, w);
+    if (bit == null || (i == 0 && bit != 1) || (i >= 1 && i <= 3 && bit != 0)) {
+      return false;
+    }
+    pos += 2 * w;
+  }
+  return true;
+}
 
 /// The RC6 mode 0 protocol.
 final class Rc6 extends IrProtocol {
@@ -92,59 +138,50 @@ final class Rc6 extends IrProtocol {
   }) {
     final c = DurationCursor(durationsUs, tolerance);
     if (!c.mark(6 * _t) || !c.space(2 * _t)) return null;
-    // Bits after the leader: start (2 slots), mode (6), trailer (4), D (16),
-    // F (16) = 44 slots of t.
-    const slots = 44;
-    final expanded = expandToUnits(
+    return searchUnitExpansions(
       durationsUs,
       c.index,
       _t,
       tolerance,
       maxUnits: 3,
-      maxLevels: slots,
+      maxLevels: _slots,
+      viable: _viable,
+      accept: (expanded, end) =>
+          _fromLevels(durationsUs, expanded, end, tolerance),
     );
-    if (expanded == null) return null;
-    final levels = [...expanded.levels];
+  }
+
+  DecodedCommand? _fromLevels(
+    List<int> durationsUs,
+    List<bool> expanded,
+    int end,
+    TimingTolerance tolerance,
+  ) {
     // A final 0 bit's trailing mark is kept; a final 1 bit's trailing space
     // merges into the gap.
-    if (levels.length == slots - 1) levels.add(false);
-    if (levels.length != slots) return null;
+    final levels = [...expanded];
+    if (levels.length == _slots - 1) levels.add(false);
+    if (levels.length != _slots) return null;
+    if (!endsAtGap(durationsUs, end, _minGapUs, tolerance)) return null;
+    // Start and mode bits were checked by [_viable]; values are MSB first.
+    final values = <int>[];
     var pos = 0;
-    int? readBit(int width) {
-      final first = levels.sublist(pos, pos + width);
-      final second = levels.sublist(pos + width, pos + 2 * width);
-      pos += 2 * width;
-      final a = first.every((l) => l);
-      final aSpace = first.every((l) => !l);
-      final b = second.every((l) => l);
-      final bSpace = second.every((l) => !l);
-      if (a && bSpace) return 1;
-      if (aSpace && b) return 0;
-      return null;
-    }
-
-    if (readBit(1) != 1) return null;
-    for (var i = 0; i < 3; i++) {
-      if (readBit(1) != 0) return null; // mode 0 only
-    }
-    final t = readBit(2);
-    if (t == null) return null;
-    var d = 0;
-    for (var i = 0; i < 8; i++) {
-      final bit = readBit(1);
+    for (var i = 0; i < _bits; i++) {
+      final w = _width(i);
+      final bit = _bitAt(levels, pos, w);
       if (bit == null) return null;
-      d = (d << 1) | bit;
+      values.add(bit);
+      pos += 2 * w;
     }
+    var d = 0;
     var f = 0;
     for (var i = 0; i < 8; i++) {
-      final bit = readBit(1);
-      if (bit == null) return null;
-      f = (f << 1) | bit;
+      d = (d << 1) | values[5 + i];
+      f = (f << 1) | values[13 + i];
     }
-    final end = expanded.end;
     return DecodedCommand(
       protocolId: id,
-      params: {'D': d, 'F': f, 'T': t},
+      params: {'D': d, 'F': f, 'T': values[4]},
       consumed: end.isOdd ? end : end - 1,
     );
   }

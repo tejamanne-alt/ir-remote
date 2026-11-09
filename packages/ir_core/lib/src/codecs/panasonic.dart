@@ -14,6 +14,12 @@
 ///   https://www.sbprojects.net/knowledge/ir/kaseikyo.php — the 48-bit
 ///   frame layout with a 16-bit manufacturer code and the trailing parity
 ///   byte.
+///
+/// End of frame: the IRP ends every frame with a stop mark and a 173-unit
+/// (74.7 ms) space, so the decoder requires that space (within the
+/// tolerance) or the end of the capture after the stop mark. A data bit's
+/// space there means the frame is the prefix of a longer Kaseikyo-style
+/// frame (Panasonic and Daikin AC state frames share the leader).
 library;
 
 import '../signal/ir_signal.dart';
@@ -21,6 +27,7 @@ import 'protocol.dart';
 import 'timing.dart';
 
 const int _unit = 432;
+const int _gapUnits = 173;
 const PulseCoding _coding = PulseCoding(
   zeroMarkUs: _unit,
   zeroSpaceUs: _unit,
@@ -67,8 +74,8 @@ final class Panasonic extends IrProtocol {
       durationsUs: frame,
       repeat: RepeatSpec(
         frameUs: frame,
-        leadInGapUs: 173 * _unit,
-        gapUs: 173 * _unit,
+        leadInGapUs: _gapUnits * _unit,
+        gapUs: _gapUnits * _unit,
       ),
     );
   }
@@ -86,7 +93,7 @@ final class Panasonic extends IrProtocol {
       if (v == null) return null;
       bytes.add(v);
     }
-    if (!c.mark(_unit)) return null;
+    if (!c.mark(_unit) || !c.atGap(_gapUnits * _unit)) return null;
     if (bytes[0] != 2 || bytes[1] != 32) return null;
     if (bytes[5] != (bytes[2] ^ bytes[3] ^ bytes[4])) return null;
     return DecodedCommand(

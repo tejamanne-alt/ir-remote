@@ -112,6 +112,29 @@ void main() {
       );
     });
 
+    test(
+      'NECx rows with subdevice -1 default S to 255-D, as the codec does',
+      () {
+        // IrpProtocols and the NECx codecs (nec.dart, ADR-021) agree: S
+        // defaults to 255-D, so these rows are not ambiguous.
+        final r = IrdbCsv.parse(
+          'functionname,protocol,device,subdevice,function\n'
+          'e,NECx2,7,-1,2\n'
+          'f,NECx1,7,-1,2\n',
+        );
+        expect(r.skipped, isEmpty);
+        expect(r.signals.map((s) => s.code.protocol), ['NECx2', 'NECx1']);
+        for (final s in r.signals) {
+          expect(s.code.params, {'D': 7, 'S': 248, 'F': 2});
+          final codec = ProtocolRegistry.standard.require(s.code.protocol);
+          expect(
+            s.code.toSignal(ProtocolRegistry.standard),
+            codec.encode({'D': 7, 'S': 248, 'F': 2}),
+          );
+        }
+      },
+    );
+
     test('skips unverified or invalid rows with reasons', () {
       final r = IrdbCsv.parse(
         'functionname,protocol,device,subdevice,function\n'
@@ -119,8 +142,6 @@ void main() {
         'b,NEC1-f16,4,-1,8\n'
         'c,RC5x,1,-1,1\n'
         'd,JVC{2},3,-1,1\n'
-        'e,NECx2,7,-1,2\n'
-        'f,NECx1,7,-1,2\n'
         'g,Panasonic,128,-1,61\n'
         'h,Sony12,1,0,21\n'
         'i,Sony12,32,-1,1\n'
@@ -138,8 +159,6 @@ void main() {
         IrdbSkipReason.unsupportedProtocol,
         IrdbSkipReason.unsupportedProtocol,
         IrdbSkipReason.unsupportedProtocol,
-        IrdbSkipReason.ambiguousDefault,
-        IrdbSkipReason.ambiguousDefault,
         IrdbSkipReason.malformedRow,
         IrdbSkipReason.outOfRange,
         IrdbSkipReason.outOfRange,

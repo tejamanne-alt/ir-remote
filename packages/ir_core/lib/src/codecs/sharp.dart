@@ -16,6 +16,11 @@
 ///
 /// Both halves form one command, so they live in one frame; the 43.6 ms
 /// space between them is inside the frame, and the same space follows it.
+///
+/// End of frame: the IRP ends each half with a stop mark and a 165-unit
+/// (43.6 ms) space, so the decoder requires that space (within the
+/// tolerance) or the end of the capture after the second stop mark. A data
+/// bit's space there means the frame is the prefix of a longer one.
 library;
 
 import '../signal/ir_signal.dart';
@@ -23,6 +28,7 @@ import 'protocol.dart';
 import 'timing.dart';
 
 const int _unit = 264;
+const int _gapUnits = 165;
 const PulseCoding _coding = PulseCoding(
   zeroMarkUs: _unit,
   zeroSpaceUs: 3 * _unit,
@@ -66,7 +72,7 @@ final class SharpFamily extends IrProtocol {
       ..write(b, _firstCheck, 2);
     b
       ..mark(_unit)
-      ..space(165 * _unit);
+      ..space(_gapUnits * _unit);
     _coding
       ..write(b, d, 5)
       ..write(b, 255 - f, 8)
@@ -78,8 +84,8 @@ final class SharpFamily extends IrProtocol {
       durationsUs: frame,
       repeat: RepeatSpec(
         frameUs: frame,
-        leadInGapUs: 165 * _unit,
-        gapUs: 165 * _unit,
+        leadInGapUs: _gapUnits * _unit,
+        gapUs: _gapUnits * _unit,
       ),
     );
   }
@@ -94,14 +100,14 @@ final class SharpFamily extends IrProtocol {
     final f1 = _coding.read(c, 8);
     final k1 = _coding.read(c, 2);
     if (d1 == null || f1 == null || k1 != _firstCheck) return null;
-    if (!c.mark(_unit) || !c.space(165 * _unit)) return null;
+    if (!c.mark(_unit) || !c.space(_gapUnits * _unit)) return null;
     final d2 = _coding.read(c, 5);
     final f2 = _coding.read(c, 8);
     final k2 = _coding.read(c, 2);
     if (d2 != d1 || f2 == null || f2 != 255 - f1 || k2 != _secondCheck) {
       return null;
     }
-    if (!c.mark(_unit)) return null;
+    if (!c.mark(_unit) || !c.atGap(_gapUnits * _unit)) return null;
     return DecodedCommand(
       protocolId: id,
       params: {'D': d1, 'F': f1},

@@ -25,11 +25,25 @@ abstract final class Pronto {
   /// Longest input accepted, in characters.
   static const int maxInputLength = 64 * 1024;
 
+  /// Lowest carrier a learned (0000) code may imply, in Hz.
+  ///
+  /// The divisor alone sets the carrier, so a corrupt divisor implies an
+  /// absurd one: divisor 1 means 4.1 MHz, with 0.24 us bursts that round to
+  /// 0 us. Consumer IR uses about 30 to 60 kHz, plus 455 kHz for Bang &
+  /// Olufsen; 10 to 500 kHz (divisors 9 to 414) leaves room around both.
+  static const int minCarrierHz = 10000;
+
+  /// Highest carrier a learned (0000) code may imply, in Hz. See
+  /// [minCarrierHz].
+  static const int maxCarrierHz = 500000;
+
   /// Parses Pronto Hex text into a signal.
   ///
   /// Supports format 0000 (learned, modulated) and the RC5 (5000) and RC6
-  /// (6000) preset formats. Throws [FormatException] for anything else; it
-  /// never throws other error types.
+  /// (6000) preset formats. Throws [FormatException] for anything else,
+  /// including a learned code whose carrier is outside [minCarrierHz] to
+  /// [maxCarrierHz] or with a burst shorter than 1 us; it never throws other
+  /// error types.
   static IrSignal parse(String text) {
     if (text.length > maxInputLength) {
       throw const FormatException('Pronto text is too long');
@@ -74,12 +88,22 @@ abstract final class Pronto {
     }
     final unit = divisor * tickUs;
     final carrier = (1e6 / unit).round();
+    if (carrier < minCarrierHz || carrier > maxCarrierHz) {
+      throw FormatException(
+        'carrier divisor ${divisor.toRadixString(16).padLeft(4, '0')} '
+        'implies $carrier Hz, outside $minCarrierHz to $maxCarrierHz Hz',
+      );
+    }
     List<int> seq(int start, int pairs) {
       final out = <int>[];
       for (var i = 0; i < pairs * 2; i++) {
         final v = w[start + i];
         if (v == 0) throw const FormatException('zero-length burst');
-        out.add((v * unit).round());
+        final us = (v * unit).round();
+        // Unreachable within the carrier range (a carrier period is at least
+        // 2 us), kept so that no burst can reach the model as 0 us.
+        if (us < 1) throw const FormatException('burst shorter than 1 us');
+        out.add(us);
       }
       return out;
     }

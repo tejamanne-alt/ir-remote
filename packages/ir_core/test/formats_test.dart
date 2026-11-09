@@ -93,9 +93,32 @@ void main() {
         '6000 0073 0000 0002 0100 0001',
         '5000 0073 0000 0001',
         'x' * (Pronto.maxInputLength + 1),
+        // Divisor 1 or 2 implies a 4.1 or 2.1 MHz carrier and bursts that
+        // round to 0 us.
+        '0000 0001 0000 0001 0001 0001',
+        '0000 0002 0001 0000 0001 0001',
+        '0000 0001 0001 0000 0001 0005',
+        // Divisor 0x01A0 (416) implies 9.96 kHz, just below the range.
+        '0000 01A0 0001 0000 0010 0100',
+        '0000 FFFF 0001 0000 0010 0100',
       ]) {
         expect(() => Pronto.parse(bad), throwsFormatException, reason: bad);
       }
+    });
+
+    test('accepts carriers from 10 to 500 kHz', () {
+      // Divisor 9: 460.6 kHz (Bang & Olufsen's 455 kHz rounds here).
+      final high = Pronto.parse('0000 0009 0001 0000 0010 0100');
+      expect(high.carrierHz, 460572);
+      expect(high.carrierHz, lessThanOrEqualTo(Pronto.maxCarrierHz));
+      expect(high.durationsUs, [35]);
+      // Divisor 0x019E (414): 10.01 kHz.
+      final low = Pronto.parse('0000 019E 0001 0000 0010 0100');
+      expect(low.carrierHz, greaterThanOrEqualTo(Pronto.minCarrierHz));
+      expect(
+        () => Pronto.parse('0000 0008 0001 0000 0010 0100'),
+        throwsFormatException,
+      );
     });
 
     test('survives 10,000 fuzz cases without a crash', () {
@@ -110,7 +133,22 @@ void main() {
       var parsed = 0;
       for (var i = 0; i < 10000; i++) {
         final String input;
-        switch (i % 3) {
+        switch (i % 4) {
+          case 3: // well-formed learned header, extreme divisor and bursts
+            final once = rng.nextInt(3);
+            final rep = rng.nextInt(3);
+            final divisor = rng.nextBool()
+                ? rng.nextInt(16)
+                : rng.nextInt(0x10000);
+            String w(int v) => v.toRadixString(16).padLeft(4, '0');
+            input = [
+              0,
+              divisor,
+              once,
+              rep,
+              for (var k = 0; k < 2 * (once + rep); k++)
+                rng.nextBool() ? rng.nextInt(6) : rng.nextInt(0x10000),
+            ].map(w).join(' ');
           case 0: // random words
             final n = rng.nextInt(40);
             input = List.generate(
@@ -142,6 +180,15 @@ void main() {
           parsed++;
           expect(s.durationsUs.length.isOdd, isTrue);
           expect(s.durationsUs.every((d) => d > 0), isTrue);
+          expect(
+            s.carrierHz,
+            inInclusiveRange(Pronto.minCarrierHz, Pronto.maxCarrierHz),
+          );
+          final r = s.repeat;
+          if (r != null) {
+            expect(r.frameUs.every((d) => d > 0), isTrue);
+            expect(r.leadInGapUs > 0 && r.gapUs > 0, isTrue);
+          }
         } on FormatException {
           // expected for most inputs
         }

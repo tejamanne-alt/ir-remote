@@ -3,6 +3,7 @@
 import 'dart:math';
 
 import 'package:ir_core/ir_core.dart';
+import 'package:ir_core/src/codecs/timing.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -33,6 +34,57 @@ void main() {
           final decoded = protocol.decode(noisy);
           expect(decoded, isNotNull, reason: 'params $params noisy $noisy');
           expect(decoded!.params, protocol.normalize(params));
+        }
+      });
+
+      test('round-trips with ±24% jitter on every duration', () {
+        // Just inside the default ±25% tolerance. For RC6 the 2t and 3t
+        // windows overlap here, so this also covers ambiguous durations.
+        final rng = Random(protocol.id.hashCode ^ 0x24);
+        for (var i = 0; i < iterations; i++) {
+          final params = _randomParams(protocol, rng);
+          final signal = protocol.encode(params);
+          final noisy = _jitter(signal.durationsUs, 0.24, rng);
+          final decoded = protocol.decode(noisy);
+          expect(decoded, isNotNull, reason: 'params $params noisy $noisy');
+          expect(decoded!.params, protocol.normalize(params));
+        }
+      });
+
+      test('decodes a jittered frame followed by its gaps and repeats', () {
+        final rng = Random(protocol.id.hashCode ^ 0x2e9);
+        for (var i = 0; i < iterations; i++) {
+          final params = _randomParams(protocol, rng);
+          final signal = protocol.encode(params);
+          final noisy = _jitter(signal.flatten(repeats: 2), 0.15, rng);
+          final decoded = protocol.decode(noisy);
+          expect(decoded, isNotNull, reason: 'params $params noisy $noisy');
+          expect(decoded!.isRepeatFrame, isFalse);
+          expect(decoded.params, protocol.normalize(params));
+          expect(decoded.consumed, signal.durationsUs.length);
+        }
+      });
+
+      test('rejects its frame followed by 8 more bits', () {
+        // What a longer protocol with the same leader sends (an AC state
+        // frame, a 48-bit NEC variant): the codec's frame is only a prefix.
+        final rng = Random(protocol.id.hashCode ^ 0x8b);
+        for (var i = 0; i < 100; i++) {
+          final signal = protocol.encode(_randomParams(protocol, rng));
+          final extra = [for (var b = 0; b < 8; b++) rng.nextInt(2)];
+          final longer = _withExtraBits(protocol, signal.durationsUs, extra);
+          expect(protocol.decode(longer), isNull, reason: '$longer');
+          final gap = signal.leadInGapUs;
+          expect(protocol.decode([...longer, gap, ...longer]), isNull);
+          final id = ProtocolRegistry.standard.identify(longer)?.protocolId;
+          expect(id, isNot(protocol.id), reason: '$longer');
+          // Sony12 plus 8 bits is a well-formed Sony20 frame; nothing else
+          // may match a lengthened frame.
+          expect(
+            id,
+            protocol == SonySirc.sony12 ? anyOf(isNull, 'Sony20') : isNull,
+            reason: '$longer',
+          );
         }
       });
 
@@ -190,8 +242,156 @@ void main() {
       },
     );
 
+    test('an NEC-leader AC frame is not taken for an NEC-family frame', () {
+      // Gree-style: 9 ms + 4.5 ms leader, 35 bits, a mark and a 20 ms
+      // connector space, 32 more bits and a stop mark.
+      final rng = Random(35);
+      final gree = <int>[9000, 4500];
+      void bits(int n) {
+        for (var i = 0; i < n; i++) {
+          gree.addAll([620, rng.nextBool() ? 1600 : 540]);
+        }
+      }
+
+      bits(35);
+      gree.addAll([620, 19980]);
+      bits(32);
+      gree.add(620);
+      expect(ProtocolRegistry.standard.identify(gree), isNull);
+      for (final p in [const Nec1(), const Nec1F16(), const Nec2()]) {
+        expect(p.decode(gree), isNull, reason: p.id);
+      }
+    });
+
+    test('a 48-bit NEC-style frame is not taken for NEC1', () {
+      final nec = const Nec1().encode({'D': 4, 'F': 8}).durationsUs;
+      final frame48 = [
+        ...nec,
+        for (var i = 0; i < 16; i++) ...[i.isEven ? 1692 : 564, 564],
+      ];
+      expect(const Nec1().decode(frame48), isNull);
+      expect(ProtocolRegistry.standard.identify(frame48), isNull);
+    });
+
+    test('RC6 accepts a 3t duration read low into the 2t window', () {
+      // Element 8 is the 3t mark of mode bit 0 and a toggle of 1 (1332 us);
+      // at 1106 us it is inside both the 2t and the 3t window.
+      final s = const Rc6().encode({'D': 0, 'F': 0, 'T': 1});
+      expect(s.durationsUs[8], 1332);
+      final d = [...s.durationsUs]..[8] = 1106;
+      expect(const Rc6().decode(d)!.params, {'D': 0, 'F': 0, 'T': 1});
+    });
+
+    test('identify tells NEC1 from NEC2 by the frame after the gap', () {
+      final reg = ProtocolRegistry.standard;
+      const p = {'D': 4, 'F': 8};
+      String? id(List<int> d) => reg.identify(d)?.protocolId;
+      expect(id(const Nec2().encode(p).flatten(repeats: 2)), 'NEC2');
+      expect(id(const Nec2().encode(p).flatten(repeats: 1)), 'NEC2');
+      expect(id(const Nec1().encode(p).flatten(repeats: 2)), 'NEC1');
+      expect(id(const Nec1().encode(p).flatten(repeats: 1)), 'NEC1');
+      // No second frame: the first-listed variant, as before.
+      expect(id(const Nec2().encode(p).durationsUs), 'NEC1');
+      // Something unrelated after the gap: also the first-listed variant.
+      final main = const Nec2().encode(p).durationsUs;
+      expect(id([...main, 40000, 300, 300, 300]), 'NEC1');
+      expect(reg.identify(const Nec2().encode(p).flatten(repeats: 2))!.params, {
+        'D': 4,
+        'S': 251,
+        'F': 8,
+      });
+    });
+
+    test('identify tells NECx1 from NECx2 by the frame after the gap', () {
+      final reg = ProtocolRegistry.standard;
+      String? id(List<int> d) => reg.identify(d)?.protocolId;
+      for (final p in [
+        {'D': 7, 'S': 7, 'F': 2},
+        {'D': 6, 'S': 6, 'F': 2},
+      ]) {
+        expect(id(const NecX1().encode(p).flatten(repeats: 2)), 'NECx1');
+        expect(id(const NecX1().encode(p).flatten(repeats: 1)), 'NECx1');
+        expect(id(const NecX2().encode(p).flatten(repeats: 2)), 'NECx2');
+        expect(id(const NecX1().encode(p).durationsUs), 'NECx2');
+      }
+    });
+
+    test('identify keeps NEC variants apart under jitter', () {
+      final rng = Random(0x1d);
+      for (final protocol in [
+        const Nec1(),
+        const Nec2(),
+        const NecX1(),
+        const NecX2(),
+      ]) {
+        for (var i = 0; i < 100; i++) {
+          final params = _randomParams(protocol, rng);
+          final flat = protocol.encode(params).flatten(repeats: 2);
+          final r = ProtocolRegistry.standard.identify(
+            _jitter(flat, 0.15, rng),
+          );
+          expect(r?.protocolId, protocol.id, reason: '$params');
+          expect(r!.params, protocol.normalize(params));
+        }
+      }
+    });
+
     test('identify returns null for noise', () {
       expect(ProtocolRegistry.standard.identify([100, 100, 100]), isNull);
+    });
+  });
+
+  group('searchUnitExpansions', () {
+    test(
+      'tries both readings of an ambiguous duration, fewest units first',
+      () {
+        // 1050 us is inside both the 2-unit and the 3-unit window of 444 us.
+        final seen = <String>[];
+        final r = searchUnitExpansions(
+          const [444, 1050, 444],
+          0,
+          444,
+          const TimingTolerance(),
+          accept: (levels, end) {
+            seen.add(levels.map((l) => l ? 'M' : 's').join());
+            return levels.length == 5 ? levels.length : null;
+          },
+        );
+        expect(seen, ['MssM', 'MsssM']);
+        expect(r, 5);
+      },
+    );
+
+    test('bounds the work on hostile input', () {
+      // Every duration is ambiguous: 2^40 readings without the bound.
+      var calls = 0;
+      final r = searchUnitExpansions<int>(
+        List.filled(40, 1050),
+        0,
+        444,
+        const TimingTolerance(),
+        maxExpansions: 50,
+        accept: (levels, end) {
+          calls++;
+          return null;
+        },
+      );
+      expect(r, isNull);
+      expect(calls, 50);
+    });
+
+    test('a short unmatched space or any unmatched mark rejects', () {
+      Object? accept(List<bool> l, int e) => true;
+      const t = TimingTolerance();
+      expect(
+        searchUnitExpansions([444, 200, 444], 0, 444, t, accept: accept),
+        isNull,
+      );
+      expect(searchUnitExpansions([5000], 0, 444, t, accept: accept), isNull);
+      expect(
+        searchUnitExpansions([444, 5000, 444], 0, 444, t, accept: accept),
+        isTrue,
+      );
     });
   });
 
@@ -241,3 +441,78 @@ Map<String, int> _randomParams(IrProtocol protocol, Random rng) => {
   for (final p in protocol.params)
     p.name: p.bits >= 31 ? rng.nextInt(1 << 30) : rng.nextInt(p.max + 1),
 };
+
+/// Scales every duration independently by a random factor in
+/// `1 ± maxRelative`.
+List<int> _jitter(List<int> durations, double maxRelative, Random rng) => [
+  for (final d in durations)
+    max(
+      1,
+      (d * (1 - maxRelative + rng.nextDouble() * 2 * maxRelative)).round(),
+    ),
+];
+
+/// [frame] followed by [bits] more data bits in [p]'s own bit coding, before
+/// the final mark: what a longer frame with the same leader looks like.
+List<int> _withExtraBits(IrProtocol p, List<int> frame, List<int> bits) {
+  switch (p) {
+    case Rc5():
+      // 889 us half-bits; 1 = space then mark; 27 captured half-bits (the
+      // first start half-bit is the leading space).
+      return _extendBiphase(frame, 889, 27, false, bits);
+    case Rc6():
+      // 444 us units; 1 = mark then space; leader (8t) plus 44 half-bits.
+      return _extendBiphase(frame, 444, 52, true, bits);
+    case SonySirc():
+      // Pulse width: a 600 us space, then a 600 (0) or 1200 (1) us mark.
+      return [
+        ...frame,
+        for (final b in bits) ...[600, b == 1 ? 1200 : 600],
+      ];
+  }
+  // Pulse distance: the stop mark becomes the next bit's mark.
+  final (zero, one, mark) = switch (p.id) {
+    'Panasonic' => (432, 1296, 432),
+    'LG' => (550, 1578, 526),
+    'JVC' => (525, 1575, 525),
+    'Sharp' || 'Denon' => (792, 1848, 264),
+    _ => (564, 1692, 564), // NEC family
+  };
+  return [
+    ...frame,
+    for (final b in bits) ...[b == 1 ? one : zero, mark],
+  ];
+}
+
+List<int> _extendBiphase(
+  List<int> frame,
+  int unit,
+  int frameSlots,
+  bool oneStartsWithMark,
+  List<int> bits,
+) {
+  final levels = <bool>[
+    for (var i = 0; i < frame.length; i++)
+      for (var k = 0; k < frame[i] ~/ unit; k++) i.isEven,
+  ];
+  // A final space half-bit is not in the frame (it merges into the gap).
+  while (levels.length < frameSlots) {
+    levels.add(false);
+  }
+  for (final b in bits) {
+    final first = (b == 1) == oneStartsWithMark;
+    levels
+      ..add(first)
+      ..add(!first);
+  }
+  final out = <int>[];
+  for (var i = 0; i < levels.length; i++) {
+    if (i > 0 && levels[i] == levels[i - 1]) {
+      out[out.length - 1] += unit;
+    } else {
+      out.add(unit);
+    }
+  }
+  if (!levels.last) out.removeLast();
+  return out;
+}

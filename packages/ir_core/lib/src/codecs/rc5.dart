@@ -16,6 +16,12 @@
 ///   RC5 {36k,msb,889}<1,-1|-1,1>(1,~F:1:6,T:1,D:5,F:6,^114m)+
 ///
 /// Hold-to-repeat resends the same frame with the same toggle value.
+///
+/// End of frame: the frame always lasts 14 bits (24.9 ms) of the 114 ms
+/// period, so 89.1 ms of silence follows it. The decoder requires that gap
+/// (within the tolerance) or the end of the capture after the frame's last
+/// half-bit; more half-bits there mean the frame is the prefix of a longer
+/// one.
 library;
 
 import '../signal/ir_signal.dart';
@@ -24,6 +30,12 @@ import 'timing.dart';
 
 const int _half = 889;
 const int _period = 114000;
+
+/// Half-bits in a frame: 14 bits of two each.
+const int _slots = 28;
+
+/// Shortest gap after a frame (see the library comment): 89108 us.
+const int _minGapUs = _period - _slots * _half;
 
 /// The RC5 protocol.
 final class Rc5 extends IrProtocol {
@@ -87,28 +99,49 @@ final class Rc5 extends IrProtocol {
     TimingTolerance tolerance = const TimingTolerance(),
   }) {
     if (durationsUs.isEmpty) return null;
-    final expanded = expandToUnits(
+    // The first start bit's leading space is implicit (absorbed into the
+    // preceding gap), so the capture holds at most 27 half-bits.
+    return searchUnitExpansions(
       durationsUs,
       0,
       _half,
       tolerance,
       maxUnits: 2,
-      maxLevels: 27,
+      maxLevels: _slots - 1,
+      viable: _viable,
+      accept: (expanded, end) =>
+          _fromLevels(durationsUs, expanded, end, tolerance),
     );
-    if (expanded == null) return null;
-    // The first start bit's leading space is implicit (absorbed into the
-    // preceding gap), and a trailing space may be merged into the next gap.
-    final levels = <bool>[false, ...expanded.levels];
-    if (levels.length == 27) levels.add(false);
-    if (levels.length != 28) return null;
+  }
+
+  /// Whether every complete bit of a partial expansion has two different
+  /// half-bits. Half-bit 0 is the implicit leading space, so half-bit `s`
+  /// is `expanded[s - 1]`, and bit `i` is half-bits `2i` and `2i + 1`.
+  static bool _viable(List<bool> expanded) {
+    for (var i = 1; 2 * i < expanded.length; i++) {
+      if (expanded[2 * i - 1] == expanded[2 * i]) return false;
+    }
+    return true;
+  }
+
+  DecodedCommand? _fromLevels(
+    List<int> durationsUs,
+    List<bool> expanded,
+    int end,
+    TimingTolerance tolerance,
+  ) {
+    // A final space half-bit may be merged into the next gap.
+    final levels = <bool>[false, ...expanded];
+    if (levels.length == _slots - 1) levels.add(false);
+    if (levels.length != _slots) return null;
+    if (!endsAtGap(durationsUs, end, _minGapUs, tolerance)) return null;
     final bits = <int>[];
-    for (var i = 0; i < 28; i += 2) {
+    for (var i = 0; i < _slots; i += 2) {
       final a = levels[i];
       final b = levels[i + 1];
       if (a == b) return null;
       bits.add(a ? 0 : 1);
     }
-    if (bits[0] != 1) return null;
     var d = 0;
     for (var i = 3; i < 8; i++) {
       d = (d << 1) | bits[i];
@@ -121,11 +154,11 @@ final class Rc5 extends IrProtocol {
     return DecodedCommand(
       protocolId: id,
       params: {'D': d, 'F': f, 'T': bits[2]},
-      consumed: _consumedFor(durationsUs, expanded.end),
+      consumed: _consumedFor(end),
     );
   }
 }
 
-/// A frame always ends with a mark; if expansion stopped after a space the
-/// frame's last duration is the one before it.
-int _consumedFor(List<int> durations, int end) => end.isOdd ? end : end - 1;
+/// A frame always ends with a mark; if expansion stopped after a space (at
+/// the end of the input) the frame's last duration is the one before it.
+int _consumedFor(int end) => end.isOdd ? end : end - 1;

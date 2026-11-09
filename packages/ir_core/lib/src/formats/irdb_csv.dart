@@ -24,9 +24,11 @@
 /// - `NEC1-f16` and `NEC2-f16`: IrpProtocols gives them two 8-bit function
 ///   fields (F, E) while DecodeIR and the ir_core codec use one 16-bit F,
 ///   and irdb rows carry a single function value, so the meaning is
-///   ambiguous;
-/// - NECx1 and NECx2 rows with subdevice -1: IrpProtocols defaults S to
-///   255-D where the ir_core codec (after DecodeIR) defaults it to D.
+///   ambiguous.
+///
+/// A subdevice of -1 takes the codec's default. For every mapped protocol
+/// with a defaulted S that default is IrpProtocols' own: 255-D for NEC1,
+/// NEC2, NECx1 and NECx2 (nec.dart, DECISIONS.md ADR-021).
 library;
 
 import 'dart:convert';
@@ -40,7 +42,9 @@ enum IrdbSkipReason {
   /// The protocol has no verified mapping to an ir_core codec.
   unsupportedProtocol,
 
-  /// The protocol default for an omitted subdevice is ambiguous.
+  /// The protocol default for an omitted subdevice is ambiguous. No mapped
+  /// protocol produces this today (see the library comment); the value is
+  /// kept so that callers matching on reasons keep compiling.
   ambiguousDefault,
 
   /// The row does not have five fields or a number is malformed.
@@ -161,10 +165,6 @@ abstract final class IrdbCsv {
     'sharp': 'Sharp',
     'denon': 'Denon',
   };
-
-  /// ir_core protocols whose subdevice default differs between IrpProtocols
-  /// and the ir_core codec; rows that omit the subdevice are skipped.
-  static const Set<String> _ambiguousSubdeviceDefault = {'NECx1', 'NECx2'};
 
   static final RegExp _int = RegExp(r'^-?[0-9]{1,6}$');
 
@@ -296,12 +296,6 @@ abstract final class IrdbCsv {
         throw _Skip(
           IrdbSkipReason.malformedRow,
           '$id needs a subdevice; the row has -1',
-        );
-      }
-      if (_ambiguousSubdeviceDefault.contains(id)) {
-        throw _Skip(
-          IrdbSkipReason.ambiguousDefault,
-          '$id default subdevice differs between IrpProtocols and DecodeIR',
         );
       }
     } else if (!hasS) {

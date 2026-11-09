@@ -62,6 +62,16 @@ void main() {
         expect(decoded!.protocolId, sameMainFrame[protocolId] ?? protocolId);
       });
 
+      test('registry identifies the fixture with its repeats exactly', () {
+        // The frame after the gap separates NEC1/NEC2 and NECx1/NECx2.
+        final decoded = ProtocolRegistry.standard.identify(
+          expected.flatten(repeats: 2),
+        );
+        expect(decoded, isNotNull);
+        expect(decoded!.protocolId, protocolId);
+        expect(decoded.params, protocol.normalize(params));
+      });
+
       test('decodes when the frame is followed by its gap and a repeat', () {
         final flat = expected.flatten(repeats: 1);
         final decoded = protocol.decode(flat);

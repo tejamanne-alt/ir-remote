@@ -51,7 +51,7 @@ python3 tools/fixtures/irp_oracle.py --check      # golden fixtures current
 Milestone gates:
 
 - **M1:** `(cd packages/ir_core && dart test --coverage-path=coverage/lcov.info) && python3 tools/scripts/coverage_gate.py packages/ir_core/coverage/lcov.info lib/src/codecs/ 95`
-- **M2:** `dart run db_build:build --check-reproducible` (see tools/db_build/README.md)
+- **M2:** `tools/scripts/check_code_db.sh` (rebuilds the bundled code DB from the pinned sources and compares it byte for byte; needs github.com; set `DART` if `dart` is not on PATH)
 - **Codegen:** `(cd apps/remote && dart run build_runner build)`. For a new schema version, also run `dart run drift_dev make-migrations`.
 - **l10n:** `(cd apps/remote && flutter gen-l10n)`. Strings live in `lib/l10n/app_en.arb`.
 

@@ -17,6 +17,14 @@
 /// - IRMP documentation, "LGAIR",
 ///   https://www.mikrocontroller.net/articles/IRMP_-_english#LGAIR — the
 ///   same frame layout measured from an LG air-conditioner remote.
+///
+/// End of frame: frames repeat on a 110 ms period, so the gap after a frame
+/// is at least 110 ms minus the longest frame: 24 leader units, 28 one bits
+/// (526 + 1578 us each) and the stop mark, 72.1 ms, which leaves 37.9 ms.
+/// The decoder requires that gap (within the tolerance) or the end of the
+/// capture after the stop mark of main and repeat frames; a data bit's
+/// space there means the frame is the prefix of a longer one (an NEC frame
+/// shares the leader within the tolerance).
 library;
 
 import '../signal/ir_signal.dart';
@@ -24,12 +32,16 @@ import 'protocol.dart';
 import 'timing.dart';
 
 const int _unit = 526;
+const int _oneSpace = 1578;
 const int _period = 110000;
+
+/// Shortest gap after a frame (see the library comment): 37938 us.
+const int _minGapUs = _period - (24 * _unit + 28 * (_unit + _oneSpace) + _unit);
 const PulseCoding _coding = PulseCoding(
   zeroMarkUs: _unit,
   zeroSpaceUs: 550,
   oneMarkUs: _unit,
-  oneSpaceUs: 1578,
+  oneSpaceUs: _oneSpace,
 );
 
 /// The LG 28-bit protocol.
@@ -94,7 +106,7 @@ final class Lg28 extends IrProtocol {
     final c = DurationCursor(durationsUs, tolerance);
     if (!c.mark(16 * _unit)) return null;
     if (c.space(4 * _unit)) {
-      if (!c.mark(_unit)) return null;
+      if (!c.mark(_unit) || !c.atGap(_minGapUs)) return null;
       return DecodedCommand(
         protocolId: id,
         params: const {},
@@ -107,7 +119,7 @@ final class Lg28 extends IrProtocol {
     final f = _coding.read(c, 16, msbFirst: true);
     final k = _coding.read(c, 4, msbFirst: true);
     if (d == null || f == null || k == null || k != checksum(f)) return null;
-    if (!c.mark(_unit)) return null;
+    if (!c.mark(_unit) || !c.atGap(_minGapUs)) return null;
     return DecodedCommand(
       protocolId: id,
       params: {'D': d, 'F': f},

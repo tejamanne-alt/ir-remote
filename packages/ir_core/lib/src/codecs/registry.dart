@@ -92,23 +92,89 @@ final class ProtocolRegistry {
   /// learn mode already trims captures to start on a mark.
   ///
   /// Full frames win over repeat-only frames, and among full frames the
-  /// earliest protocol in [protocols] wins.
+  /// earliest protocol in [protocols] wins, with one refinement: protocols
+  /// that read the first frame identically (same parameters, same length)
+  /// differ only in how they repeat, such as NEC1 (ditto) and NEC2 (full
+  /// frame), or NECx2 (full frame) and NECx1 (one-bit repeat). When the
+  /// capture goes on past the first frame's gap, the frame that follows
+  /// decides: the first of those protocols whose own repeat frame for these
+  /// parameters it is wins. With no second frame, or one that none of them
+  /// would send, the earliest protocol wins as before.
   DecodedCommand? identify(
     List<int> durationsUs, {
     TimingTolerance tolerance = const TimingTolerance(),
   }) {
     DecodedCommand? repeatOnly;
+    final full = <(IrProtocol, DecodedCommand)>[];
     for (final p in _protocols) {
-      final DecodedCommand? r;
-      try {
-        r = p.decode(durationsUs, tolerance: tolerance);
-      } on RangeError {
-        continue; // defensive: a decoder must never crash identification
-      }
+      final r = _tryDecode(p, durationsUs, tolerance);
       if (r == null) continue;
-      if (!r.isRepeatFrame) return r;
-      repeatOnly ??= r;
+      if (!r.isRepeatFrame) {
+        full.add((p, r));
+      } else {
+        repeatOnly ??= r;
+      }
     }
-    return repeatOnly;
+    if (full.isEmpty) return repeatOnly;
+    final first = full.first.$2;
+    final next = first.consumed + 1; // skip the gap
+    if (next < durationsUs.length) {
+      final same = [
+        for (final f in full)
+          if (f.$2.consumed == first.consumed &&
+              _sameParams(f.$2.params, first.params))
+            f,
+      ];
+      if (same.length > 1) {
+        final rest = durationsUs.sublist(next);
+        for (final (p, r) in same) {
+          if (_sendsAsRepeat(p, r.params, rest, tolerance)) return r;
+        }
+      }
+    }
+    return first;
+  }
+
+  static DecodedCommand? _tryDecode(
+    IrProtocol p,
+    List<int> durationsUs,
+    TimingTolerance tolerance,
+  ) {
+    try {
+      return p.decode(durationsUs, tolerance: tolerance);
+    } on RangeError {
+      return null; // defensive: a decoder must never crash identification
+    }
+  }
+
+  /// Whether [rest] starts with the repeat frame [p] sends for [params]: a
+  /// repeat-only frame when [p] has a dedicated repeat frame, otherwise the
+  /// same full frame again.
+  static bool _sendsAsRepeat(
+    IrProtocol p,
+    Map<String, int> params,
+    List<int> rest,
+    TimingTolerance tolerance,
+  ) {
+    final signal = p.encodeNormalized(params);
+    final repeat = signal.repeat;
+    if (repeat == null) return false;
+    final r = _tryDecode(p, rest, tolerance);
+    if (r == null) return false;
+    final dedicated = !_sameDurations(repeat.frameUs, signal.durationsUs);
+    return dedicated
+        ? r.isRepeatFrame
+        : !r.isRepeatFrame && _sameParams(r.params, params);
+  }
+
+  static bool _sameParams(Map<String, int> a, Map<String, int> b) =>
+      a.length == b.length && a.entries.every((e) => b[e.key] == e.value);
+
+  static bool _sameDurations(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 }

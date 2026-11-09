@@ -129,6 +129,28 @@ final class DurationCursor {
 
   /// Peeks at the next duration, or returns `null` at the end.
   int? peek() => atEnd ? null : durations[index];
+
+  /// Whether the frame ends here: see [endsAtGap]. Consumes nothing.
+  bool atGap(num minGapUs) => endsAtGap(durations, index, minGapUs, tolerance);
+}
+
+/// Whether a frame whose last mark is just before [index] ends there: either
+/// the capture ends, or the space at [index] is at least [minGapUs] (within
+/// [tolerance]) and so can only be the inter-frame gap.
+///
+/// Decoders call this after their frame's final mark with the shortest gap
+/// the protocol's IRP allows. Without it, a decoder accepts the prefix of a
+/// longer frame that shares its leader and bit coding (an AC state frame, a
+/// 48-bit NEC variant), because a data bit's space follows instead.
+bool endsAtGap(
+  List<int> durations,
+  int index,
+  num minGapUs,
+  TimingTolerance tolerance,
+) {
+  if (index >= durations.length) return true;
+  if (index.isEven) return false; // a mark: the frame goes on
+  return tolerance.atLeast(durations[index], minGapUs);
 }
 
 /// Bit timing for pulse-distance and pulse-width protocols.
@@ -210,40 +232,71 @@ final class PulseCoding {
   }
 }
 
-/// Expands a capture into half-bit levels for biphase (Manchester) decoding.
+/// Expands a capture into half-bit levels for biphase (Manchester) decoding
+/// and hands each complete expansion to [accept].
 ///
-/// Returns one boolean per [unitUs] slot (true = mark) and the index of the
-/// first duration not expanded, or `null` if a mark is not close to a whole
-/// number of units between 1 and [maxUnits]. Expansion stops at a space
-/// longer than [maxUnits] units (the inter-frame gap) or after
-/// [maxLevels] slots; the gap itself is not consumed.
-({List<bool> levels, int end})? expandToUnits(
+/// Each duration from [start] on becomes one level per [unitUs] slot
+/// (true = mark), for a whole number of units between 1 and [maxUnits]. An
+/// expansion is complete at the end of the input, at a space that matches
+/// no unit count and is longer than [maxUnits] units (the inter-frame gap,
+/// which is not consumed), or once it holds [maxLevels] or more levels;
+/// [accept] then receives the levels and the index of the first duration
+/// not expanded, and returns a result or `null` to reject.
+///
+/// With a ±25% tolerance the windows of neighbouring unit counts overlap:
+/// 2 and 3 units both accept 2.25 to 2.5 units (999 to 1110 us for RC6's
+/// 444 us unit), so taking the first matching count misreads valid frames
+/// whose 3-unit durations come in short. Every matching count is
+/// tried instead, fewest units first, depth first, and the first accepted
+/// result wins. [viable], when given, sees the partial expansion after each
+/// duration and returns false to abandon readings that cannot become a
+/// frame, which keeps the search linear for real frames. At most
+/// [maxExpansions] complete expansions are handed to [accept], bounding the
+/// work for hostile input. A mark that matches no unit count, or a short
+/// space that matches none, rejects the reading.
+///
+/// [accept] and [viable] see a live list and must not keep it.
+T? searchUnitExpansions<T extends Object>(
   List<int> durations,
   int start,
   int unitUs,
   TimingTolerance tolerance, {
+  required T? Function(List<bool> levels, int end) accept,
+  bool Function(List<bool> levels)? viable,
   int maxUnits = 3,
   int maxLevels = 1 << 16,
+  int maxExpansions = 64,
 }) {
   final levels = <bool>[];
-  var i = start;
-  for (; i < durations.length && levels.length < maxLevels; i++) {
+  var budget = maxExpansions;
+  T? complete(int end) {
+    if (budget <= 0) return null;
+    budget--;
+    return accept(levels, end);
+  }
+
+  T? walk(int i) {
+    if (i >= durations.length || levels.length >= maxLevels) {
+      return complete(i);
+    }
     final isMark = i.isEven;
     final d = durations[i];
-    var matched = 0;
-    for (var k = 1; k <= maxUnits; k++) {
-      if (tolerance.matches(d, unitUs * k)) {
-        matched = k;
-        break;
+    var matched = false;
+    for (var k = 1; k <= maxUnits && budget > 0; k++) {
+      if (!tolerance.matches(d, unitUs * k)) continue;
+      matched = true;
+      for (var j = 0; j < k; j++) {
+        levels.add(isMark);
       }
+      if (viable == null || viable(levels)) {
+        final r = walk(i + 1);
+        if (r != null) return r;
+      }
+      levels.length -= k;
     }
-    if (matched == 0) {
-      if (!isMark && d > unitUs * maxUnits) break; // trailing gap
-      return null;
-    }
-    for (var k = 0; k < matched; k++) {
-      levels.add(isMark);
-    }
+    if (!matched && !isMark && d > unitUs * maxUnits) return complete(i);
+    return null;
   }
-  return (levels: levels, end: i);
+
+  return walk(start);
 }

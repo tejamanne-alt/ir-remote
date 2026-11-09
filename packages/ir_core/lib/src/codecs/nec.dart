@@ -23,6 +23,15 @@
 ///
 /// NECx2 is the protocol Samsung TVs use (Flipper calls it "Samsung32");
 /// Samsung codes carry S explicitly (S = D).
+///
+/// End of frame: every frame of the family repeats on a 108 ms period
+/// (^108m), so the gap after a frame is at least 108 ms minus the longest
+/// frame. The longest is an NEC1-f16 frame with all 32 bits 1: 16 + 8
+/// leader units, 32 x 4 bit units and a 1-unit stop mark, 153 units or
+/// 86.3 ms, which leaves 21.7 ms. The decoders require that gap (within the
+/// tolerance) or the end of the capture after the stop mark, of main and
+/// repeat frames alike; a data bit's space there means the frame is the
+/// prefix of a longer one (an AC state frame, a 48-bit NEC variant).
 library;
 
 import '../signal/ir_signal.dart';
@@ -32,6 +41,9 @@ import 'timing.dart';
 const int _unit = 564;
 const int _carrier = 38400;
 const int _period = 108000;
+
+/// Shortest gap after any frame of the family (see the library comment).
+const int _minGapUs = _period - (24 + 32 * 4 + 1) * _unit; // 21708 us
 const PulseCoding _coding = PulseCoding(
   zeroMarkUs: _unit,
   zeroSpaceUs: _unit,
@@ -125,7 +137,7 @@ abstract base class _NecBase extends IrProtocol {
     if (!c.mark(_headerMark)) return null;
     // Repeat frames.
     if (repeatKind == _Repeat.ditto && c.space(4 * _unit)) {
-      if (!c.mark(_unit)) return null;
+      if (!c.mark(_unit) || !c.atGap(_minGapUs)) return null;
       return DecodedCommand(
         protocolId: id,
         params: const {},
@@ -143,7 +155,7 @@ abstract base class _NecBase extends IrProtocol {
           (tolerance.matches(d[i + 1], _unit) ||
               tolerance.matches(d[i + 1], 3 * _unit)) &&
           tolerance.matches(d[i + 2], _unit) &&
-          (i + 3 >= d.length || d[i + 3] > 8 * _unit)) {
+          endsAtGap(d, i + 3, _minGapUs, tolerance)) {
         return DecodedCommand(
           protocolId: id,
           params: const {},
@@ -167,7 +179,7 @@ abstract base class _NecBase extends IrProtocol {
       if (f1 == null || f2 == null || f2 != 255 - f1) return null;
       f = f1;
     }
-    if (!c.mark(_unit)) return null;
+    if (!c.mark(_unit) || !c.atGap(_minGapUs)) return null;
     return DecodedCommand(
       protocolId: id,
       params: {'D': d, 'S': s, 'F': f},
