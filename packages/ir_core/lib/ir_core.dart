@@ -6,6 +6,7 @@
 library;
 
 export 'src/ac/ac_state.dart';
+export 'src/ac/encoders.dart';
 export 'src/codecs/jvc.dart';
 export 'src/codecs/lg.dart';
 export 'src/codecs/nec.dart';

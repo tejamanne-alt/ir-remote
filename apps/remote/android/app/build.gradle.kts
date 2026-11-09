@@ -15,11 +15,13 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
+        // Placeholder until {{PUBLISHER}} is supplied (docs/OPEN_QUESTIONS.md Q1).
+        // tools/scripts/release_checks.sh fails release builds while it is com.example.
         applicationId = "com.example.irremote"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // {{MIN_ANDROID_API}} = 26 (support choice; ConsumerIrManager exists from API 19).
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -31,8 +33,8 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            // Release signing is configured in M8; until then local release
+            // builds use the debug key and must never be uploaded.
             signingConfig = signingConfigs.getByName("debug")
         }
     }

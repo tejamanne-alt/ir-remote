@@ -1,0 +1,537 @@
+{
+  "@@locale": "en",
+  "appTitle": "IR Remote",
+  "onboardingDetecting": "Checking what this phone can do…",
+  "pathEmitterTitle": "Your phone can send IR",
+  "pathEmitterBody": "This phone has a built-in IR blaster, so it can control TVs, set-top boxes, ACs and more directly.",
+  "pathHubTitle": "Connect a hub",
+  "pathHubBodyIos": "iPhones have no IR blaster. To control appliances, this app needs a compatible Wi-Fi IR hub on your home network.",
+  "pathNoEmitterTitle": "This phone can't send IR. Here's what works",
+  "pathNoEmitterBody": "This phone has no IR blaster. You can still use the app with a compatible Wi-Fi IR hub on your home network.",
+  "supportedHubsTitle": "Supported hubs",
+  "hubEspBridge": "IR Bridge (ESP32, build it yourself)",
+  "hubBroadlink": "Broadlink RM4 mini (best effort)",
+  "irBasics": "Tip: point the phone or hub at the appliance, with a clear line of sight.",
+  "actionAddFirstDevice": "Add your first device",
+  "actionConnectHub": "Connect a hub",
+  "actionUseSimulator": "Use the simulator (debug builds only)",
+  "actionContinue": "Continue",
+  "actionLater": "Later",
+  "homeTitle": "Remotes",
+  "homeEmptyTitle": "No remotes yet",
+  "homeEmptyBody": "Add a TV, set-top box, AC or other appliance to get started.",
+  "actionAddDevice": "Add device",
+  "sectionFavourites": "Favourites",
+  "sectionRecents": "Recent",
+  "sectionNoRoom": "Other devices",
+  "noTransportBanner": "Nothing can send IR yet. Connect a hub to control your devices.",
+  "menuHubs": "Hubs",
+  "menuSettings": "Settings",
+  "deviceSubtitle": "{category} · {brand}",
+  "@deviceSubtitle": {
+    "placeholders": {
+      "category": {
+        "type": "String"
+      },
+      "brand": {
+        "type": "String"
+      }
+    }
+  },
+  "categoryTv": "TV",
+  "categorySetTopBox": "Set-top box",
+  "categoryAirConditioner": "Air conditioner",
+  "categoryFan": "Fan",
+  "categoryProjector": "Projector",
+  "categorySoundbar": "Soundbar or AV receiver",
+  "categoryAirPurifier": "Air purifier or cooler",
+  "categoryGeneric": "Custom remote",
+  "addDeviceTitle": "Add device",
+  "chooseCategory": "What do you want to control?",
+  "chooseBrand": "Choose the brand",
+  "searchBrands": "Search brands",
+  "brandNotListed": "Not listed",
+  "brandNotListedHint": "Try common codes for this kind of device",
+  "noBrandsMatch": "No brands match \"{query}\".",
+  "@noBrandsMatch": {
+    "placeholders": {
+      "query": {
+        "type": "String"
+      }
+    }
+  },
+  "matchingTitle": "Find the right code",
+  "matchingProgress": "Set {current} of {total}",
+  "@matchingProgress": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "matchingPointAt": "Point at the appliance and tap Send.",
+  "matchingSend": "Send {key}",
+  "@matchingSend": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      }
+    }
+  },
+  "matchingDidItRespond": "Did it respond?",
+  "matchingPowerNote": "Power is often a toggle, so \"it turned off\" counts as a response.",
+  "matchingConfirmTitle": "One more check",
+  "matchingConfirmBody": "Now try {key}. Did it respond too?",
+  "@matchingConfirmBody": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      }
+    }
+  },
+  "answerYes": "Yes",
+  "answerNo": "No",
+  "answerSendAgain": "Send again",
+  "matchingAllFailedTitle": "None of the codes worked",
+  "matchingAllFailedBody": "You can still set up this device:",
+  "noCodeSets": "There are no codes for this choice yet.",
+  "optionLearn": "Learn from your original remote (hub required)",
+  "optionImportFlipper": "Import a Flipper .ir file",
+  "optionPastePronto": "Paste a Pronto Hex code",
+  "saveDeviceTitle": "Name your device",
+  "deviceNameLabel": "Name",
+  "deviceNameError": "Enter a name (up to 40 characters).",
+  "roomLabel": "Room",
+  "roomNone": "No room",
+  "roomNew": "New room…",
+  "roomNewTitle": "New room",
+  "actionSave": "Save",
+  "actionCancel": "Cancel",
+  "actionDelete": "Delete",
+  "actionDone": "Done",
+  "actionAdd": "Add",
+  "deviceSaved": "{name} is ready.",
+  "@deviceSaved": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "keyPower": "Power",
+  "keyPowerOn": "On",
+  "keyPowerOff": "Off",
+  "keyInput": "Input",
+  "keyVolUp": "Volume up",
+  "keyVolDown": "Volume down",
+  "keyMute": "Mute",
+  "keyChUp": "Channel up",
+  "keyChDown": "Channel down",
+  "keyUp": "Up",
+  "keyDown": "Down",
+  "keyLeft": "Left",
+  "keyRight": "Right",
+  "keyOk": "OK",
+  "keyBack": "Back",
+  "keyHome": "Home",
+  "keyMenu": "Menu",
+  "keyExit": "Exit",
+  "keyGuide": "Guide",
+  "keyInfo": "Info",
+  "keyRed": "Red",
+  "keyGreen": "Green",
+  "keyYellow": "Yellow",
+  "keyBlue": "Blue",
+  "keyPlay": "Play",
+  "keyPause": "Pause",
+  "keyStop": "Stop",
+  "keyRewind": "Rewind",
+  "keyFastForward": "Fast forward",
+  "keyPrevious": "Previous",
+  "keyNext": "Next",
+  "keyRecord": "Record",
+  "keySubtitle": "Subtitles",
+  "keyAudio": "Audio",
+  "keyLastChannel": "Last channel",
+  "keySpeedUp": "Speed up",
+  "keySpeedDown": "Speed down",
+  "keySpeed": "Speed",
+  "keyTimer": "Timer",
+  "keySleep": "Sleep",
+  "keyLight": "Light",
+  "keySwing": "Swing",
+  "keyOscillate": "Oscillate",
+  "keyMode": "Mode",
+  "keyFocusIn": "Focus in",
+  "keyFocusOut": "Focus out",
+  "keyKeystoneUp": "Keystone up",
+  "keyKeystoneDown": "Keystone down",
+  "keySoundMode": "Sound mode",
+  "keyTempUp": "Temperature up",
+  "keyTempDown": "Temperature down",
+  "keyDigit": "Digit {digit}",
+  "@keyDigit": {
+    "placeholders": {
+      "digit": {
+        "type": "int"
+      }
+    }
+  },
+  "keyVolumeShort": "Vol",
+  "keyChannelShort": "Ch",
+  "remoteMissingKey": "{key} (no code)",
+  "@remoteMissingKey": {
+    "placeholders": {
+      "key": {
+        "type": "String"
+      }
+    }
+  },
+  "remoteMoreKeys": "More keys",
+  "remoteNumbers": "Numbers",
+  "remoteNoKeys": "This remote has no buttons yet.",
+  "deviceMenuRename": "Rename",
+  "deviceMenuDelete": "Delete",
+  "deviceMenuFavourite": "Add to favourites",
+  "deviceMenuUnfavourite": "Remove from favourites",
+  "deviceMenuTransport": "Send through",
+  "deviceMenuLearn": "Learn a button",
+  "deviceMenuPronto": "Add a Pronto Hex button",
+  "deviceDeleteConfirm": "Delete {name}?",
+  "@deviceDeleteConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "deviceDeleteBody": "This removes the remote and its codes from this phone.",
+  "transportAuto": "Automatic",
+  "resultNoTransport": "Nothing can send IR. Connect a hub, or use a phone with an IR blaster.",
+  "resultUnavailable": "Couldn't reach {transport}: {detail}",
+  "@resultUnavailable": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "resultTimeout": "{transport} didn't respond in time. Check it is powered on and on the same Wi-Fi.",
+  "@resultTimeout": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      }
+    }
+  },
+  "resultCarrier": "{transport} can't send this code's carrier frequency.",
+  "@resultCarrier": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      }
+    }
+  },
+  "resultTooLong": "This code is too long for {transport}.",
+  "@resultTooLong": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      }
+    }
+  },
+  "resultInvalid": "This code is damaged and can't be sent.",
+  "resultRefused": "{transport} refused the code: {detail}",
+  "@resultRefused": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "resultHardware": "{transport} reported an error: {detail}",
+  "@resultHardware": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      },
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "resultSentTo": "Sent through {transport}",
+  "@resultSentTo": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      }
+    }
+  },
+  "hubsTitle": "Hubs",
+  "hubsEmpty": "No hubs yet.",
+  "hubAdd": "Add hub",
+  "hubDiscovering": "Looking for IR Bridges on this Wi-Fi…",
+  "hubFound": "Found on your network",
+  "hubNoneFound": "No bridges found yet. You can enter an address instead.",
+  "hubManual": "Enter an address",
+  "hubAddressLabel": "IP address",
+  "hubAddressError": "Enter an IPv4 address such as 192.168.1.40.",
+  "hubTypeLabel": "Hub type",
+  "hubPairTitle": "Pair with {name}",
+  "@hubPairTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "hubPairBody": "Press the button on the bridge, then tap Pair within 60 seconds.",
+  "hubPair": "Pair",
+  "hubPaired": "{name} is connected.",
+  "@hubPaired": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "hubPairFailed": "Pairing failed: {detail}",
+  "@hubPairFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "hubPairWindowClosed": "The bridge's pairing window is closed. Press its button and try again.",
+  "hubHealthy": "Online",
+  "hubDegraded": "Needs attention: {reason}",
+  "@hubDegraded": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "hubUnreachable": "Offline: {reason}",
+  "@hubUnreachable": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "hubChecking": "Checking…",
+  "hubRemove": "Remove hub",
+  "hubRemoveConfirm": "Remove {name}? Remotes that use it switch to automatic.",
+  "@hubRemoveConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "hubCheckNow": "Check now",
+  "localNetworkDeniedTitle": "Allow local network access",
+  "localNetworkDeniedBody": "The app couldn't see devices on your Wi-Fi. On iPhone, open Settings, find this app and turn on Local Network.",
+  "broadlinkNote": "Broadlink support is best effort. Keep the hub connected to your Wi-Fi as usual.",
+  "broadlinkAddFailed": "Couldn't connect to the Broadlink hub: {detail}",
+  "@broadlinkAddFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "builtInEmitter": "This phone's IR blaster",
+  "simulatorName": "Simulator",
+  "hubKindEsp": "IR Bridge",
+  "hubKindBroadlink": "Broadlink",
+  "settingsTitle": "Settings",
+  "settingsTheme": "Theme",
+  "themeSystem": "System",
+  "themeLight": "Light",
+  "themeDark": "Dark",
+  "settingsTemperatureUnit": "Temperature unit",
+  "unitCelsius": "°C",
+  "unitFahrenheit": "°F",
+  "settingsAbout": "About",
+  "settingsLicenses": "Licenses",
+  "settingsPrivacy": "Privacy",
+  "settingsDebug": "Developer",
+  "settingsSignalInspector": "Signal Inspector",
+  "settingsSimulator": "Use the simulator transport",
+  "settingsUnverifiedAc": "Show unverified AC encoders",
+  "settingsBackup": "Backup and restore",
+  "aboutBody": "An IR universal remote. Works offline; nothing leaves this phone.",
+  "aboutNoAffiliation": "Brand names are used only to describe compatibility. This app is not affiliated with, or endorsed by, any appliance manufacturer.",
+  "aboutVersion": "Version {version}",
+  "@aboutVersion": {
+    "placeholders": {
+      "version": {
+        "type": "String"
+      }
+    }
+  },
+  "privacyBody": "This app has no account, no ads and no analytics. Your remotes, AC settings and learned codes stay on this phone unless you export them yourself.",
+  "licensesDataSources": "IR code sources",
+  "licensesPackages": "Open-source packages",
+  "licensesNoDataSources": "No IR code database is bundled in this build.",
+  "inspectorTitle": "Signal Inspector",
+  "inspectorEmpty": "No signals sent yet.",
+  "inspectorTip": "Tip: many phone front cameras show an IR LED flashing.",
+  "inspectorExport": "Copy as JSON",
+  "inspectorCopied": "Copied {count} signals.",
+  "@inspectorCopied": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "inspectorEntry": "{carrier} Hz · {count} durations · {total} µs",
+  "@inspectorEntry": {
+    "placeholders": {
+      "carrier": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "acLastSent": "Last sent {time}, as sent from this phone",
+  "@acLastSent": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "acNeverSent": "Not sent yet. The app can't read the AC; it shows what it last sent.",
+  "acResync": "Re-sync",
+  "acResyncHint": "Sends the whole state again",
+  "acPowerOn": "On",
+  "acPowerOff": "Off",
+  "acPowerToggle": "Power",
+  "acPowerToggleWarning": "This AC uses a power toggle. If it is already on, this turns it off.",
+  "acModeAuto": "Auto",
+  "acModeCool": "Cool",
+  "acModeDry": "Dry",
+  "acModeFan": "Fan",
+  "acModeHeat": "Heat",
+  "acMode": "Mode",
+  "acFan": "Fan",
+  "acFanAuto": "Auto",
+  "acFanLevel": "Level {level}",
+  "@acFanLevel": {
+    "placeholders": {
+      "level": {
+        "type": "int"
+      }
+    }
+  },
+  "acTemperature": "Target temperature",
+  "acTempUp": "Raise temperature",
+  "acTempDown": "Lower temperature",
+  "acSwingV": "Swing",
+  "acSwingH": "Horizontal swing",
+  "acTurbo": "Turbo",
+  "acEco": "Eco",
+  "acSleep": "Sleep",
+  "acQuiet": "Quiet",
+  "acLight": "Display light",
+  "acClean": "Clean",
+  "acPressToToggle": "press to toggle",
+  "acUnverifiedTitle": "Your AC's codes aren't verified yet",
+  "acUnverifiedBody": "AC protocols are verified brand by brand against real remotes. Until yours is, learn its buttons from the original remote.",
+  "acUnverifiedBadge": "Unverified encoder",
+  "acVariantProgress": "Variant {current} of {total}",
+  "@acVariantProgress": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "acVariantPrompt": "We'll send: on, cool, 24 °C, auto fan. Did the AC beep or change?",
+  "acTemperatureValue": "{value}°",
+  "@acTemperatureValue": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "learnTitle": "Learn a button",
+  "learnPrompt": "Point your original remote at the hub and press the button.",
+  "learnWaiting": "Waiting for a signal…",
+  "learnTimeout": "No signal arrived. Point the remote at the hub and try again.",
+  "learnError": "Learning stopped: {detail}",
+  "@learnError": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "learnRetry": "Try again",
+  "learnCaptured": "Got it.",
+  "learnDecoded": "Recognised as {protocol}",
+  "@learnDecoded": {
+    "placeholders": {
+      "protocol": {
+        "type": "String"
+      }
+    }
+  },
+  "learnRaw": "Saved as a raw signal",
+  "learnNameLabel": "Button name",
+  "learnTest": "Test",
+  "learnNoHub": "Learning needs a hub with an IR receiver, such as the IR Bridge.",
+  "learnStart": "Start",
+  "prontoTitle": "Paste Pronto Hex",
+  "prontoHint": "0000 006D 0022 0002 …",
+  "prontoInvalid": "That isn't a valid Pronto code: {detail}",
+  "@prontoInvalid": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "prontoKeyLabel": "Button",
+  "importFailed": "Couldn't import the file: {detail}",
+  "@importFailed": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "importedKeys": "Imported {count} buttons.",
+  "@importedKeys": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "genericDeviceName": "My remote"
+}
