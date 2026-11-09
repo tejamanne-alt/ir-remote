@@ -10,7 +10,7 @@ been verified on real hardware; every human gate is pending (see
 | M1 Signal core | **gate passed** (CI) | golden fixtures from the independent IRP oracle; property, jitter and fuzz tests; codec line coverage 97.40% (≥ 95%); Pronto parser 10,000 fuzz cases |
 | M2 Code database | **gate passed** (CI) | L1 + L5 checks; Flipper/irdb parser fuzzing (12,000 each); `tools/scripts/check_code_db.sh` rebuilds byte-identically (content hash `1b5fa616…`); L4 refuses irdb |
 | M3 Transports | in progress | transport tests against fakes pass (115); Android instrumented test for capability detection written (`androidTest/.../ConsumerIrCapabilitiesTest.kt`), runs in the nightly emulator job, first run pending; H1 pending |
-| F1 Bridge firmware | in progress | 80 Unity host tests pass with ASan/UBSan, locally and in CI; first `pio run`/`pio test` CI run triggered by the session-close commit; H2 pending |
+| F1 Bridge firmware | **gate passed**; H2 pending | CI [run 42578636634](https://github.com/tejamanne-alt/ir-remote/actions/runs/42578636634): `pio run -e esp32dev` builds, `pio test -e native` passes; 80 host tests pass with ASan/UBSan. H2 (flash, pair, capture loop) needs a board |
 | M4 Key-code app | in progress | widget tests for onboarding, add device, remote, hubs, settings, AC panel, macros, backup; add-device integration test written (nightly emulator/simulator job, not yet run); migration tests v1→v2; H3 pending |
 | M5 AC engine | blocked on human | `AcState`, `AcCapabilities`, encoder contract and the AC panel exist; **no encoders ship** (Q2 licensing route, Q3 brand list, H4 captures) |
 | M6 Learning, custom remotes, macros, import/export | gate tests pass; one feature gap | export → wipe → import identical; 2,000-mutation backup fuzz; Flipper import fixtures; macro scheduler tests; learning screen; button editor (drag to reorder, rename, delete; theme colours only). **Missing:** copying a single key from a database code set into a custom remote |
@@ -19,12 +19,11 @@ been verified on real hardware; every human gate is pending (see
 
 ## Next
 
-1. Check the firmware `pio run` / `pio test -e native` CI results (first
-   run with the PlatformIO toolchain) and fix any compile errors.
-2. M3: confirm the first nightly `connectedDebugAndroidTest` run.
+1. M3: confirm the first nightly run of the emulator job (integration test
+   plus `connectedDebugAndroidTest`) and the iOS simulator job.
+2. Debug Loopback screen for the closed-loop rig, so H1 can run.
 3. M6: let custom remotes take single keys from database code sets.
-4. Loopback screen (debug) for the closed-loop rig, so H1 can run.
-5. M7: Android widget and Quick Settings tile; iOS widgets, App Intents,
+4. M7: Android widget and Quick Settings tile; iOS widgets, App Intents,
    Control Center.
 
 ## Blocked on human
@@ -92,5 +91,9 @@ standard keys now show their new label.
 
 CI: run 1 green on all push jobs (inner loop, Android, iOS, firmware host).
 
-Next session starts with: check the PlatformIO firmware build and the
-first nightly emulator run (integration test plus instrumented test).
+CI run 3 is green on every push job: inner loop and all gates, Android debug
+APK, iOS no-codesign build, firmware host tests, `pio test -e native`, and
+`pio run -e esp32dev`.
+
+Next session starts with: the first nightly emulator and simulator runs
+(integration test plus instrumented test).
