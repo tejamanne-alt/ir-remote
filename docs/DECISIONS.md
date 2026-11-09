@@ -13,6 +13,7 @@ Freshness checks record what was verified, where, and when.
 | 2026-11-09 | `NEARBY_WIFI_DEVICES` | developer.android.com Wi-Fi permissions | Required (target 13+) only for local-only hotspot, Wi-Fi Aware, Wi-Fi P2P, RTT and scan results. NSD and plain sockets do not need it, so it is **not** declared |
 | 2026-11-09 | irdb licence | raw.githubusercontent.com probonopd/irdb LICENSE.md | Conditions as described in the contract (issue before use, fixed notice, up to 3 free copies) |
 | 2026-11-09 | Source pins | `git ls-remote` | probonopd/irdb `11aa5eb3…`, flipperdevices/irdb `f7b15366…` |
+| 2026-11-09 | AndroidX test (runner 1.6.2, ext-junit 1.2.1) | maven.google.com (redirects to dl.google.com, blocked from the sandbox) | Not verifiable here; pinned to known-published versions, resolved by CI |
 | 2026-11-09 | Arduino-IRremote | raw.githubusercontent.com LICENSE | MIT; LG 28-bit notes in `src/ir_LG.hpp` |
 
 ## ADR-001: Stack is Flutter 3.47.9 / Dart 3.13.7 in a pub workspace

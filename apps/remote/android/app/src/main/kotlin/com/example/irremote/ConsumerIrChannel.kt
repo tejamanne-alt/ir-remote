@@ -45,33 +45,7 @@ class ConsumerIrChannel(private val context: Context, messenger: BinaryMessenger
         }
     }
 
-    private fun capabilities(): Map<String, Any?> {
-        val hasFeature =
-            context.packageManager.hasSystemFeature(PackageManager.FEATURE_CONSUMER_IR)
-        val hasEmitter = try {
-            manager?.hasIrEmitter() == true
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "hasIrEmitter() failed", e)
-            false
-        }
-        val ranges: List<List<Int>>? = try {
-            manager?.carrierFrequencies?.map { listOf(it.minFrequency, it.maxFrequency) }
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "getCarrierFrequencies() failed", e)
-            null
-        }
-        if (hasEmitter && ranges == null) {
-            Log.w(TAG, "getCarrierFrequencies() returned null; carrier ranges unknown")
-        }
-        return mapOf(
-            "hasFeature" to hasFeature,
-            "hasEmitter" to hasEmitter,
-            "carrierRanges" to ranges,
-            "manufacturer" to Build.MANUFACTURER,
-            "model" to Build.MODEL,
-            "sdkInt" to Build.VERSION.SDK_INT,
-        )
-    }
+    private fun capabilities(): Map<String, Any?> = ConsumerIrCapabilities.detect(context)
 
     private fun transmit(call: MethodCall, result: MethodChannel.Result) {
         val carrier = call.argument<Int>("carrierHz")
@@ -110,5 +84,43 @@ class ConsumerIrChannel(private val context: Context, messenger: BinaryMessenger
     companion object {
         private const val CHANNEL = "irremote/consumer_ir"
         private const val TAG = "ConsumerIr"
+    }
+}
+
+/**
+ * Runtime emitter detection, separate from the channel so instrumented tests
+ * can call it directly. Uses both PackageManager.FEATURE_CONSUMER_IR and
+ * ConsumerIrManager.hasIrEmitter(); never infers anything from brand or model.
+ */
+object ConsumerIrCapabilities {
+    private const val TAG = "ConsumerIr"
+
+    fun detect(context: Context): Map<String, Any?> {
+        val manager = context.getSystemService(Context.CONSUMER_IR_SERVICE) as? ConsumerIrManager
+        val hasFeature =
+            context.packageManager.hasSystemFeature(PackageManager.FEATURE_CONSUMER_IR)
+        val hasEmitter = try {
+            manager?.hasIrEmitter() == true
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "hasIrEmitter() failed", e)
+            false
+        }
+        val ranges: List<List<Int>>? = try {
+            manager?.carrierFrequencies?.map { listOf(it.minFrequency, it.maxFrequency) }
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "getCarrierFrequencies() failed", e)
+            null
+        }
+        if (hasEmitter && ranges == null) {
+            Log.w(TAG, "getCarrierFrequencies() returned null; carrier ranges unknown")
+        }
+        return mapOf(
+            "hasFeature" to hasFeature,
+            "hasEmitter" to hasEmitter,
+            "carrierRanges" to ranges,
+            "manufacturer" to Build.MANUFACTURER,
+            "model" to Build.MODEL,
+            "sdkInt" to Build.VERSION.SDK_INT,
+        )
     }
 }

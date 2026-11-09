@@ -173,7 +173,9 @@ jobs:
           api-level: 34
           arch: x86_64
           target: google_apis
-          script: cd apps/remote && flutter test integration_test
+          script: |
+            cd apps/remote && flutter test integration_test
+            cd android && ./gradlew app:connectedDebugAndroidTest
 
   integration-ios:
     name: Integration test on an iOS simulator (nightly)

@@ -27,6 +27,7 @@ android {
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
         // flag during build.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -48,4 +49,12 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // Instrumented tests only (M3 gate: capability detection). Versions could
+    // not be checked from the build sandbox (Google Maven blocked); CI resolves
+    // them in the nightly emulator job.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }
