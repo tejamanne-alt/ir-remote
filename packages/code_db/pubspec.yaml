@@ -1,0 +1,19 @@
+name: code_db
+description: >-
+  The bundled, read-only IR code database: schema, loader with content-hash
+  verification and the query API used by the add-device flow.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+resolution: workspace
+
+dependencies:
+  ir_core:
+    path: ../ir_core
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: '>=1.25.0 <2.0.0'

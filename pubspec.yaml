@@ -1,0 +1,17 @@
+name: irremote_workspace
+description: Workspace root for the IR remote app, its packages and tools.
+publish_to: none
+
+environment:
+  sdk: ^3.13.0
+
+workspace:
+  - apps/remote
+  - packages/ir_core
+  - packages/ir_transports
+  - packages/code_db
+  - tools/db_build
+  - tools/check_licenses
+
+dev_dependencies:
+  lints: ^6.1.0
