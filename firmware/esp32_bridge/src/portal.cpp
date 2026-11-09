@@ -4,6 +4,8 @@
 
 #include <WiFi.h>
 
+#include <esp_http_server.h>
+
 #include <atomic>
 #include <cstring>
 #include <mutex>
@@ -21,17 +23,17 @@ std::mutex nameLock;
 std::string currentName;
 std::atomic<bool> restart{false};
 
-std::string param(AsyncWebServerRequest* r, const char* name) {
-  const AsyncWebParameter* p = r->getParam(name, true);
-  return p ? std::string(p->value().c_str()) : std::string();
+std::string param(const std::string& body, const char* key) {
+  std::string value;
+  return bridge::formField(body, key, value) ? value : std::string();
 }
 
-void sendPage(AsyncWebServerRequest* r, int status, const std::string& html) {
+esp_err_t sendPage(httpd_req_t* r, int status, const std::string& html) {
   bridge::Response res;
   res.status = status;
   res.body = html;
   res.contentType = "text/html; charset=utf-8";
-  http_api::send(r, res);
+  return http_api::send(r, res);
 }
 
 std::string name() {
@@ -46,46 +48,47 @@ void begin(const std::string& bridgeName) {
   currentName = bridgeName;
 }
 
-bool claims(AsyncWebServerRequest* r) {
+bool claims(httpd_req_t* r) {
   if (!net::accessPointUp() || !net::isAccessPointClient(r)) return false;
-  return !r->url().startsWith("/v1/");
+  return http_api::path(r).rfind("/v1/", 0) != 0;
 }
 
-void handle(AsyncWebServerRequest* r) {
-  const String apIp = WiFi.softAPIP().toString();
+esp_err_t handle(httpd_req_t* r) {
+  const std::string apIp = WiFi.softAPIP().toString().c_str();
   // Captive-portal detection (Android generate_204, Apple hotspot-detect,
   // Windows connecttest) asks for other hosts: send everything to the page.
-  if (r->host() != apIp) {
-    r->redirect(String("http://") + apIp + "/");
-    return;
+  std::string host = http_api::header(r, "Host");
+  const size_t colon = host.find(':');
+  if (colon != std::string::npos) host.resize(colon);
+  if (host != apIp) return http_api::redirect(r, "http://" + apIp + "/");
+  const bridge::Method m = http_api::method(r);
+  const std::string p = http_api::path(r);
+  if (p == "/" && m == bridge::Method::Get) {
+    return sendPage(r, 200, bridge::renderSetupPage(name(), net::networks(), ""));
   }
-  const bool isGet = std::strcmp(r->methodToString(), "GET") == 0;
-  const bool isPost = std::strcmp(r->methodToString(), "POST") == 0;
-  if (r->url() == "/" && isGet) {
-    sendPage(r, 200, bridge::renderSetupPage(name(), net::networks(), ""));
-    return;
-  }
-  if (r->url() == "/save" && isPost) {
+  if (p == "/save" && m == bridge::Method::Post) {
+    std::string body;
+    if (!http_api::readBody(r, body, bridge::kMaxFormBytes)) {
+      return sendPage(r, 400, bridge::renderSetupPage(name(), net::networks(),
+                                                      "The form was too large. Try again."));
+    }
     bridge::WifiCredentials c;
-    c.ssid = param(r, "ssid");
-    c.password = param(r, "pass");
-    c.name = param(r, "name");
+    c.ssid = param(body, "ssid");
+    c.password = param(body, "pass");
+    c.name = param(body, "name");
     const bridge::CredentialError e = bridge::validateCredentials(c);
     if (e != bridge::CredentialError::None) {
-      sendPage(r, 400, bridge::renderSetupPage(name(), net::networks(),
-                                               bridge::describeCredentialError(e)));
-      return;
+      return sendPage(r, 400, bridge::renderSetupPage(name(), net::networks(),
+                                                      bridge::describeCredentialError(e)));
     }
     if (!nvs_store::saveWifi(c)) {
-      sendPage(r, 500, bridge::renderSetupPage(name(), net::networks(),
-                                               "Could not save the settings. Try again."));
-      return;
+      return sendPage(r, 500, bridge::renderSetupPage(name(), net::networks(),
+                                                      "Could not save the settings. Try again."));
     }
-    sendPage(r, 200, bridge::renderSavedPage(c.ssid));
     restart = true;
-    return;
+    return sendPage(r, 200, bridge::renderSavedPage(c.ssid));
   }
-  r->redirect("/");
+  return http_api::redirect(r, "/");
 }
 
 bool restartRequested() { return restart.load(); }

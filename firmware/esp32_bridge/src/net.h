@@ -5,7 +5,7 @@
 // (_irbridge._tcp). The decisions come from bridge::WifiPolicy.
 #pragma once
 
-#include <ESPAsyncWebServer.h>
+#include <esp_http_server.h>
 
 #include <string>
 #include <vector>
@@ -23,7 +23,7 @@ void loop(uint64_t nowMs, bridge::WifiPolicy& policy, const bridge::Identity& id
 bool stationConnected();
 bool accessPointUp();
 // True when the request arrived through the setup access point interface.
-bool isAccessPointClient(AsyncWebServerRequest* request);
+bool isAccessPointClient(httpd_req_t* request);
 // Last scan result (copy; safe from any task).
 std::vector<bridge::ScannedNetwork> networks();
 

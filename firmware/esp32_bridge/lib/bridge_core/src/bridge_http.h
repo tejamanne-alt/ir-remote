@@ -53,9 +53,24 @@ constexpr const char* kBadImage = "bad_image";                // 400, OTA image 
 constexpr const char* kUpgradeRequired = "upgrade_required";  // 426, GET /v1/ws without upgrade
 constexpr const char* kStorageError = "storage_error";        // 500, NVS write failed
 constexpr const char* kOtaFailed = "ota_failed";              // 500, flash write failed
+constexpr const char* kTransmitFailed = "transmit_failed";    // 500, IR task did not run
 }  // namespace err
 
 // {"error": code, "detail": detail}
 Response errorResponse(int status, const char* code, const std::string& detail);
+
+// "<code> <reason>" for an HTTP status line, for example "404 Not Found".
+// Unknown codes map to their class ("500 Internal Server Error").
+const char* statusLine(int status);
+
+// Decodes application/x-www-form-urlencoded text: '+' is a space and %XX a
+// byte. Returns false (and leaves `out` unspecified) on a malformed escape.
+bool urlDecode(const std::string& in, std::string& out);
+
+// Finds `key` in a form-encoded body ("a=1&b=two") and decodes its value.
+// Returns false when the key is absent or its value is malformed. Bodies
+// longer than kMaxFormBytes are rejected outright.
+constexpr size_t kMaxFormBytes = 2048;
+bool formField(const std::string& body, const char* key, std::string& value);
 
 }  // namespace bridge

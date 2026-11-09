@@ -87,15 +87,12 @@ NEC42ext (32). Adding clean-room codecs for these from published IRP would
 recover them. **Recommendation:** add NEC42 and Pioneer in M8 if the matrix
 shows demand. They aren't in the contract's v1 codec list.
 
-## Q12. LGPL-3.0 in the bridge firmware
+## Q12. LGPL-3.0 in the bridge firmware: resolved 2026-11-09
 
-ESPAsyncWebServer and AsyncTCP are LGPL-3.0, which is beyond the LGPL-2.1
-plan and outside the L5 allow-list. They live only in the firmware binary,
-never in the app. LGPL-3.0 adds an "installation information" duty if
-pre-flashed units ship (for example a unit sent to App Review).
-**Options:** (a) accept, publish firmware source and the build steps, and
-document reflashing; (b) switch to ESP-IDF's own HTTP server (Apache-2.0).
-**Recommendation:** (b) before units ship; (a) is fine for DIY builds.
+The owner chose the best-licensed option. The firmware now uses ESP-IDF's
+esp_http_server (Apache-2.0), which is already part of the Arduino-ESP32
+core, instead of ESPAsyncWebServer and AsyncTCP (LGPL-3.0). No LGPL-3.0 code
+is linked (ADR-025).
 
 ## Q13. The bridge setup network is open
 

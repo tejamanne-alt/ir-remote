@@ -5,7 +5,7 @@
 //
 // All protocol logic lives in lib/bridge_core and is unit-tested on the host.
 // This file only wires it to the hardware and the network:
-//   AsyncTCP task  -> HTTP + WebSocket callbacks (http_api.cpp)
+//   httpd task     -> HTTP + WebSocket handlers (http_api.cpp, esp_http_server)
 //   Arduino loop   -> BOOT button, Wi-Fi, IR receive, IR transmit, LED
 // Every call into the core holds http_api::coreLock().
 #include <Arduino.h>
@@ -45,7 +45,6 @@ bridge::Identity identity;
 bridge::WifiPolicy wifiPolicy;
 bridge::ButtonTracker button;
 uint64_t restartAtMs = 0;
-uint64_t lastHousekeepingMs = 0;
 
 uint64_t nowMs() { return static_cast<uint64_t>(esp_timer_get_time()) / 1000; }
 
@@ -93,17 +92,16 @@ void handleCapture(uint64_t now) {
 
 void handleTransmit() {
   bridge::SendRawJob job;
-  AsyncWebServerRequestPtr request;
-  if (!http_api::takePendingTransmit(job, request)) return;
-  // Not holding the core lock: /v1/info, /v1/health and the WebSocket keep
-  // answering while the LED is busy, and a second send gets 409 busy.
+  if (!http_api::takePendingTransmit(job)) return;
+  // Not holding the core lock: the core keeps answering (409 busy for a
+  // second send) while the LED is busy.
   const uint64_t elapsedUs = ir_io::transmit(job);
   bridge::Response response;
   {
     std::lock_guard<std::mutex> g(http_api::coreLock());
     response = core->finishTransmit(elapsedUs);
   }
-  http_api::answerPaused(request, response);
+  http_api::completeTransmit(response);
 }
 
 void updateLed(uint64_t now) {
@@ -166,7 +164,10 @@ void setup() {
   wifiPolicy.begin(hasCredentials, nowMs());
   net::begin(credentials, bridge::hostnameFromMac(mac), bridge::apSsidFromMac(mac));
   portal::begin(identity.name);
-  http_api::begin(*core, http_api::PortalHooks{portal::claims, portal::handle});
+  if (!http_api::begin(*core, http_api::PortalHooks{portal::claims, portal::handle})) {
+    log_e("HTTP API unavailable; restarting");
+    restartAtMs = nowMs() + board::kRestartDelayMs;
+  }
 }
 
 void loop() {
@@ -185,10 +186,6 @@ void loop() {
   handleCapture(now);
   handleTransmit();
   updateLed(now);
-  if (now - lastHousekeepingMs >= 1000) {
-    lastHousekeepingMs = now;
-    http_api::housekeeping();
-  }
   scheduleRestart(now);
   delay(1);
 }

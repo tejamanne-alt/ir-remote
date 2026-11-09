@@ -18,7 +18,7 @@ Constraints:
 - The image (about 1.2 to 1.6 MB) is far larger than RAM, so it must be streamed
   to flash.
 - The 16 KiB JSON body cap cannot apply to this route.
-- The web server delivers the body in TCP-sized chunks on the AsyncTCP task.
+- The handler reads the body with `httpd_req_recv` in 1 KiB chunks on the esp_http_server task.
   Nothing on that task may block for seconds (watchdog, other clients).
 - A failed or interrupted update must leave the running firmware untouched.
 

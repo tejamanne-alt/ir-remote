@@ -234,8 +234,15 @@ of these is a contract change.
   multi-byte A/C protocols it is the state bytes in IRremoteESP8266's order.
   `decoded` is `null` when the receive buffer overflowed.
 - **WebSocket**: the token goes in the `Authorization` header of the upgrade
-  (browsers cannot do that; the app can). Messages from clients are ignored.
-  Clearing tokens closes every session with code 1008.
+  (browsers cannot do that; the app can). esp_http_server in the Arduino build
+  cannot refuse an upgrade before the handshake, so a missing or unknown token
+  gets `101` and then an immediate close with code 1008 (instead of `401`).
+  Messages from clients are read and ignored; frames over 512 bytes drop the
+  client. Clearing tokens closes every session with code 1008.
+- **Bodies need a `Content-Length`**: esp_http_server does not accept chunked
+  request bodies. The app always sends a length.
+- **`500 transmit_failed`**: a send whose IR transmission never started (the
+  loop task stalled) gets this after the pattern length plus 3 s.
 - **Busy**: `409 busy` is also returned while an OTA upload is in progress.
 - `HEAD` and `OPTIONS` are `405`. Paths are matched exactly: `/v1/info/` is `404`.
 
@@ -270,7 +277,7 @@ lib/bridge_core/   portable C++17, no Arduino/ESP-IDF headers, unit-tested on th
   bridge_provisioning  id/hostname/TXT, Wi-Fi credential checks, setup page, Wi-Fi policy
 src/               Arduino glue only
   main.cpp         loop: button, Wi-Fi, IR receive/transmit, LED, restarts
-  http_api.cpp     ESPAsyncWebServer + AsyncWebSocket <-> Bridge
+  http_api.cpp     esp_http_server (HTTP + WebSocket, ESP-IDF) <-> Bridge
   ir_io.cpp        IRremoteESP8266 send/receive
   net.cpp          station / setup AP, captive DNS, scan, mDNS
   portal.cpp       setup page handlers
@@ -280,10 +287,14 @@ test/test_native/  Unity tests for bridge_core (also built by tools/run_host_tes
 test/host_shim/    minimal Unity-compatible header for the host script
 ```
 
-HTTP callbacks run on the AsyncTCP task (pinned to core 0). IR transmission
-runs on the Arduino loop task (core 1): a `send/raw` request is validated and
-marked busy in the core, the HTTP request is paused, the loop transmits, and
-then the reply goes out with the measured `elapsedUs`. Every call into `Bridge`
+HTTP and WebSocket handlers run on the esp_http_server task (pinned to core 0).
+IR transmission runs on the Arduino loop task (core 1): a `send/raw` request is
+validated and marked busy in the core, the handler waits while the loop
+transmits, and then the reply goes out with the measured `elapsedUs`.
+Broadcasts to WebSocket clients are queued onto the server task
+(`httpd_queue_work`). The Arduino core's ESP-IDF build has no WebSocket
+pre-handshake hook, so the token on `GET /v1/ws` is checked right after the
+handshake, and a bad one closes the socket with status 1008. Every call into `Bridge`
 holds one mutex. The core is not thread-safe and does not need to be.
 
 The receiver is switched off while the bridge transmits, so the bridge does not
@@ -296,17 +307,16 @@ rig (H2).
 | Component | Version (pinned) | License | Role |
 | --- | --- | --- | --- |
 | [IRremoteESP8266](https://github.com/crankyoldgit/IRremoteESP8266) | 2.9.0 | LGPL-2.1 | IR send, receive and decode; linked into the firmware |
-| [ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer) (ESP32Async) | 3.12.1 | **LGPL-3.0** | HTTP server and WebSocket; linked into the firmware |
-| [AsyncTCP](https://github.com/ESP32Async/AsyncTCP) (ESP32Async) | 3.5.0 | **LGPL-3.0** | TCP layer of the web server; linked into the firmware |
 | [Arduino-ESP32](https://github.com/espressif/arduino-esp32) core and its bundled libraries (WiFi, Preferences, DNSServer, ESPmDNS) | 3.3.x via platform 8.0.0 | LGPL-2.1 | Framework; linked into the firmware |
-| [ESP-IDF](https://github.com/espressif/esp-idf) (prebuilt inside Arduino-ESP32: FreeRTOS, lwIP, mbedTLS, Wi-Fi, mDNS, OTA) | as bundled | Apache-2.0, with component licences (FreeRTOS MIT, lwIP BSD-3-Clause, mbedTLS Apache-2.0, others) | SDK; linked into the firmware |
+| [ESP-IDF](https://github.com/espressif/esp-idf) (prebuilt inside Arduino-ESP32: esp_http_server for HTTP + WebSocket, FreeRTOS, lwIP, mbedTLS, Wi-Fi, mDNS, OTA) | as bundled | Apache-2.0, with component licences (FreeRTOS MIT, lwIP BSD-3-Clause, mbedTLS Apache-2.0, others) | SDK; linked into the firmware |
 | [platform-espressif32](https://github.com/platformio/platform-espressif32) | 8.0.0 | Apache-2.0 | Build tooling only |
 | [platform-native](https://github.com/platformio/platform-native) | 1.2.1 | Apache-2.0 | Build tooling only (host tests) |
 | [Unity](https://github.com/ThrowTheSwitch/Unity) | as installed by PlatformIO | MIT | Test framework only; not in the firmware |
 
-The pinned versions match the upstream release tags as of 2026-11-09. They have
-not yet been resolved against the PlatformIO registry (it was unreachable while
-this was written). No third-party code is copied into this directory: the
+The pinned versions resolve and build in CI (`pio run -e esp32dev`,
+`pio test -e native`). The web server moved from ESPAsyncWebServer/AsyncTCP
+(LGPL-3.0) to ESP-IDF's esp_http_server (Apache-2.0) on 2026-11-09, so no
+LGPL-3.0 code is linked. No third-party code is copied into this directory: the
 libraries are used through their public APIs and fetched by PlatformIO at build
 time. `bridge_core` has no third-party dependencies at all.
 
@@ -319,9 +329,10 @@ talks to it only over the network and contains none of its code or of the
 libraries above (Gate L2).
 
 The firmware image statically links LGPL-2.1 libraries (Arduino-ESP32,
-IRremoteESP8266) and LGPL-3.0 libraries (ESPAsyncWebServer, AsyncTCP). We meet
-their relinking requirement by publishing the complete corresponding source of
-the firmware with every binary release:
+IRremoteESP8266); everything else is Apache-2.0, MIT or BSD. There is no
+LGPL-3.0 code, so no installation-information duty applies to pre-flashed
+units. We meet the LGPL-2.1 relinking requirement by publishing the complete
+corresponding source of the firmware with every binary release:
 
 1. Every bridge firmware release is a git tag. The release attaches the
    `firmware.bin`, its SHA-256, and a source archive of `firmware/esp32_bridge`
@@ -331,8 +342,8 @@ the firmware with every binary release:
    `POST /v1/ota`. No device is locked against that: no secure boot, no flash
    encryption.
 3. The release bundle includes this `LICENSE`, [`NOTICE`](NOTICE) and the licence
-   texts of the linked libraries (LGPL-2.1, LGPL-3.0 with GPL-3.0, Apache-2.0 and
-   the ESP-IDF component licences).
+   texts of the linked libraries (LGPL-2.1, Apache-2.0 and the ESP-IDF
+   component licences).
 4. The source stays available for at least three years after the last binary
    release.
 

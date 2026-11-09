@@ -37,6 +37,7 @@ bump of `api` in `GET /v1/info`.
 | 413 | `too_large` | Body over 16 KiB, or more than `maxDurations` durations |
 | 501 | `not_implemented` | `POST /v1/send/ac` on firmware built without AC encoders |
 | 500 | `storage_error` | NVS write failed while pairing |
+| 500 | `transmit_failed` | The IR transmission never started (bridge loop stalled) |
 | 507 | `pairing_full` | Already 8 paired clients; the user clears pairings with a long press |
 
 Checks run in this order: 404, then 405 (with `Allow`), 413, 401, body
@@ -110,6 +111,11 @@ Response: `202 {"learning": true}`.
 `200 {"learning": false}`
 
 ### `GET /v1/ws` (WebSocket, auth header required on the upgrade)
+
+The reference firmware (esp_http_server) completes the handshake and then
+closes at once with status 1008 when the token is missing or unknown; a
+server that can check before the handshake may answer `401` instead.
+Clients must treat both as "not authorized".
 
 Server-to-client messages:
 

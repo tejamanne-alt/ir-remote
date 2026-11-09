@@ -38,16 +38,14 @@ binary (marked "not shipped").
 Linked only into the bridge firmware, never into the app (gate L2).
 Firmware source (LGPL-2.1-or-later) is published with every bridge release.
 Details are in `firmware/esp32_bridge/README.md` ("Third-party").
-Versions are pinned in `platformio.ini`, but have not been resolved against
-the PlatformIO registry from this sandbox; CI resolves them.
+Versions are pinned in `platformio.ini` and resolve and build in CI. No
+LGPL-3.0 code is linked: the web server is ESP-IDF's esp_http_server (ADR-025).
 
 | Component | Version | License | Use |
 | --- | --- | --- | --- |
 | [IRremoteESP8266](https://github.com/crankyoldgit/IRremoteESP8266) | 2.9.0 | LGPL-2.1 | IR send and receive (firmware only) |
-| [ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer) | 3.12.1 | LGPL-3.0 | HTTP and WebSocket server (firmware only; OPEN_QUESTIONS Q12) |
-| [AsyncTCP](https://github.com/ESP32Async/AsyncTCP) | 3.5.0 | LGPL-3.0 | TCP for the web server (firmware only; Q12) |
 | [Arduino-ESP32](https://github.com/espressif/arduino-esp32) | 3.3.x | LGPL-2.1 | WiFi, Preferences, DNSServer, ESPmDNS (firmware only) |
-| [ESP-IDF](https://github.com/espressif/esp-idf) | bundled | Apache-2.0 plus component licences | SDK (firmware only) |
+| [ESP-IDF](https://github.com/espressif/esp-idf) | bundled | Apache-2.0 plus component licences | SDK, including esp_http_server for HTTP and WebSocket (firmware only) |
 | platform-espressif32 / platform-native | 8.0.0 / 1.2.1 | Apache-2.0 | build tools |
 | [Unity](https://github.com/ThrowTheSwitch/Unity) | via PlatformIO | MIT | firmware tests only |
 

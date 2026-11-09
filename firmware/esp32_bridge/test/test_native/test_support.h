@@ -211,3 +211,4 @@ void run_pairing_tests();
 void run_ota_tests();
 void run_provisioning_tests();
 void run_fuzz_tests();
+void run_form_tests();

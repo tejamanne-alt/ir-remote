@@ -197,3 +197,22 @@ previously unspecified behaviour was defined.
 typed addresses, discovered services, backup imports and stored rows before
 any transport is created. A crafted backup therefore cannot make the app
 contact an internet host.
+
+## ADR-025: Bridge web server is ESP-IDF's esp_http_server
+
+**Context:** ESPAsyncWebServer and AsyncTCP are LGPL-3.0, outside the L5
+allow-list. They add an installation-information duty for pre-flashed units
+(Q12). **Decision (owner: "whichever is best"):** use esp_http_server
+(Apache-2.0). It ships inside the Arduino-ESP32 core (ESP-IDF 5.5), and that
+core is built with `CONFIG_HTTPD_WS_SUPPORT=y`, checked in
+esp32-arduino-lib-builder `configs/defconfig.common` on 2026-11-09. So no
+library is added. **Consequences:**
+- One server task; a send waits there while the loop transmits.
+- Request bodies need a Content-Length (the app sends one).
+- The build has no WebSocket pre-handshake hook, so a bad token on the upgrade
+  closes with 1008 after the handshake, instead of 401 (documented in
+  BRIDGE_API).
+- The only LGPL code left is LGPL-2.1 (Arduino-ESP32, IRremoteESP8266), met by
+  publishing the source.
+- The glue was syntax-checked against the real ESP-IDF 5.5 headers, and CI
+  builds it.

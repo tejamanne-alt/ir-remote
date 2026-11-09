@@ -2,12 +2,14 @@
 // Copyright (C) 2026 IR Remote contributors
 #include "net.h"
 
-#include <AsyncTCP.h>
 #include <DNSServer.h>
 #include <ESPmDNS.h>
 #include <WiFi.h>
+#include <esp_http_server.h>
+#include <lwip/sockets.h>
 
 #include <atomic>
+#include <cstring>
 #include <mutex>
 
 namespace net {
@@ -179,9 +181,27 @@ void loop(uint64_t nowMs, bridge::WifiPolicy& policy, const bridge::Identity& id
 bool stationConnected() { return connected.load(); }
 bool accessPointUp() { return apUp.load(); }
 
-bool isAccessPointClient(AsyncWebServerRequest* request) {
-  if (!apUp.load() || request == nullptr || request->client() == nullptr) return false;
-  return request->client()->localIP() == WiFi.softAPIP();
+bool isAccessPointClient(httpd_req_t* request) {
+  if (!apUp.load() || request == nullptr) return false;
+  // The local address of the connection tells which interface it came in on.
+  const int fd = httpd_req_to_sockfd(request);
+  struct sockaddr_storage local;
+  socklen_t len = sizeof(local);
+  if (fd < 0 || getsockname(fd, reinterpret_cast<struct sockaddr*>(&local), &len) != 0) return false;
+  uint32_t ipv4 = 0;
+  if (local.ss_family == AF_INET) {
+    ipv4 = reinterpret_cast<struct sockaddr_in*>(&local)->sin_addr.s_addr;
+  } else if (local.ss_family == AF_INET6) {
+    // esp_http_server listens on IPv6 when lwIP has it: IPv4 clients arrive
+    // as IPv4-mapped addresses (::ffff:a.b.c.d).
+    const uint8_t* a = reinterpret_cast<struct sockaddr_in6*>(&local)->sin6_addr.s6_addr;
+    static const uint8_t kMapped[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff};
+    if (std::memcmp(a, kMapped, sizeof(kMapped)) != 0) return false;
+    std::memcpy(&ipv4, a + 12, 4);
+  } else {
+    return false;
+  }
+  return ipv4 == static_cast<uint32_t>(WiFi.softAPIP());
 }
 
 std::vector<bridge::ScannedNetwork> networks() {

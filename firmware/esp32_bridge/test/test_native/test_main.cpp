@@ -18,6 +18,7 @@ int main(int, char**) {
   run_pairing_tests();
   run_ota_tests();
   run_provisioning_tests();
+  run_form_tests();
   run_fuzz_tests();
   return UNITY_END();
 }

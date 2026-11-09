@@ -5,15 +5,15 @@
 // clients of the setup access point; the LAN never sees it.
 #pragma once
 
-#include <ESPAsyncWebServer.h>
+#include <esp_http_server.h>
 
 #include <string>
 
 namespace portal {
 
 void begin(const std::string& bridgeName);
-bool claims(AsyncWebServerRequest* request);
-void handle(AsyncWebServerRequest* request);
+bool claims(httpd_req_t* request);
+esp_err_t handle(httpd_req_t* request);
 // Set after new credentials were saved; the loop restarts the bridge.
 bool restartRequested();
 

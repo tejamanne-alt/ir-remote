@@ -24,18 +24,6 @@ Third-party components linked into the firmware image
     Copyright 2009 Ken Shirriff, 2015 Mark Szabo, 2015 Sebastien Warin,
     David Conran and the IRremoteESP8266 contributors
 
-  ESPAsyncWebServer 3.12.1 (ESP32Async)
-    https://github.com/ESP32Async/ESPAsyncWebServer
-    GNU Lesser General Public License v3.0 (LGPL-3.0-or-later)
-    Copyright 2016-2026 Hristo Gochkov, Mathieu Carbou, Emil Muratov,
-    Will Miles
-
-  AsyncTCP 3.5.0 (ESP32Async)
-    https://github.com/ESP32Async/AsyncTCP
-    GNU Lesser General Public License v3.0 (LGPL-3.0-or-later)
-    Copyright 2016-2026 Hristo Gochkov, Mathieu Carbou, Emil Muratov,
-    Will Miles
-
   Arduino core for the ESP32 (espressif/arduino-esp32) 3.3.x
     https://github.com/espressif/arduino-esp32
     GNU Lesser General Public License v2.1
@@ -44,7 +32,8 @@ Third-party components linked into the firmware image
   ESP-IDF, prebuilt inside the Arduino core
     https://github.com/espressif/esp-idf
     Apache License 2.0; bundled components carry their own licences
-    (FreeRTOS: MIT, lwIP: BSD-3-Clause, mbedTLS: Apache-2.0, and others)
+    (FreeRTOS: MIT, lwIP: BSD-3-Clause, mbedTLS: Apache-2.0, and others).
+    The HTTP and WebSocket server is ESP-IDF's esp_http_server (Apache-2.0).
     Copyright Espressif Systems (Shanghai) Co., Ltd. and contributors
 
 Build and test tooling only (not part of the firmware image):
@@ -60,7 +49,7 @@ LGPL compliance (applies to every published firmware binary)
   the image can be rebuilt with "pio run -e esp32dev" and installed over USB
   or OTA. Devices are never locked against installing a modified image (no
   secure boot, no flash encryption). Release bundles include LICENSE, this
-  NOTICE, and the licence texts of the linked components (LGPL-2.1, LGPL-3.0
-  together with GPL-3.0, Apache-2.0 and the ESP-IDF component licences).
+  NOTICE, and the licence texts of the linked components (LGPL-2.1,
+  Apache-2.0 and the ESP-IDF component licences).
   Source stays available for at least three years after the last binary
   release.
