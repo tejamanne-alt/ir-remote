@@ -8,6 +8,12 @@ import 'dart:io';
 import 'package:ir_core/ir_core.dart';
 
 /// Largest HTTP or WebSocket message accepted from a bridge.
+///
+/// HTTP replies are cut off while streaming. dart:io's WebSocket has no
+/// frame-size limit, so a larger frame is buffered whole before it is
+/// dropped here: a hostile LAN host could make the app hold one big frame in
+/// memory. Accepted for v1 (hubs are LAN-only and paired); see
+/// docs/AUDIT_2026-11-09.md.
 const int maxBridgeMessageBytes = 64 * 1024;
 
 /// Most durations accepted in one capture.
