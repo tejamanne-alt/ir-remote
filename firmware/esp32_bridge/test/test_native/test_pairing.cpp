@@ -124,6 +124,54 @@ void test_storage_failures() {
   TEST_ASSERT_EQUAL_INT(0, b.pairedClients());
 }
 
+void test_cleared_tokens_are_saved_even_after_a_storage_error() {
+  Rig rig;
+  const std::string auth = rig.pair();
+  rig.storage.failSave = true;
+  TEST_ASSERT_FALSE(rig.bridge.onButton(ButtonEvent::LongPress, rig.now));
+  TEST_ASSERT_TRUE(rig.bridge.storageErrorPending());
+  TEST_ASSERT_EQUAL_INT(401, rig.respond(Method::Get, "/v1/health", "", auth).status);
+  rig.now += 2010;  // past the 2 s "cleared" flash
+  rig.bridge.tick(rig.now);
+  TEST_ASSERT_TRUE(rig.bridge.ledPattern(rig.now) == bridge::LedPattern::StorageError);
+  // Storage recovers: the next retry writes the empty list.
+  rig.storage.failSave = false;
+  rig.now += bridge::kStorageRetryMs;
+  rig.bridge.tick(rig.now);
+  TEST_ASSERT_FALSE(rig.bridge.storageErrorPending());
+  TEST_ASSERT_TRUE(rig.bridge.ledPattern(rig.now) == bridge::LedPattern::Off);
+  // After a restart the old token stays revoked.
+  bridge::Bridge restarted(testsupport::testIdentity(), rig.storage, rig.platform);
+  TEST_ASSERT_TRUE(restarted.begin());
+  TEST_ASSERT_EQUAL_INT(0, restarted.pairedClients());
+}
+
+void test_websocket_auth_frame() {
+  Rig rig;
+  const std::string auth = rig.pair();
+  const std::string token = auth.substr(7);
+  TEST_ASSERT_TRUE(rig.bridge.authorizeWebSocketFrame("{\"type\":\"auth\",\"token\":\"" + token + "\"}"));
+  TEST_ASSERT_TRUE(
+      rig.bridge.authorizeWebSocketFrame(" {\"token\":\"" + token + "\", \"x\":[1], \"type\":\"auth\"} "));
+  const char* bad[] = {
+      "",
+      "auth",
+      "{}",
+      "{\"type\":\"auth\"}",
+      "{\"type\":\"auth\",\"token\":\"ffffffffffffffffffffffffffffffff\"}",
+      "{\"type\":\"auth\",\"token\":7}",
+      "[\"auth\"]",
+  };
+  for (const char* b : bad) TEST_ASSERT_TRUE_MESSAGE(!rig.bridge.authorizeWebSocketFrame(b), b);
+  TEST_ASSERT_FALSE(rig.bridge.authorizeWebSocketFrame("{\"type\":\"other\",\"token\":\"" + token + "\"}"));
+  TEST_ASSERT_FALSE(rig.bridge.authorizeWebSocketFrame("{\"type\":\"auth\",\"token\":\"" + token + "0\"}"));
+  TEST_ASSERT_FALSE(rig.bridge.authorizeWebSocketFrame("{\"type\":\"auth\",\"token\":\"" + token + "\"} x"));
+  TEST_ASSERT_FALSE(rig.bridge.authorizeWebSocketFrame(
+      "{\"type\":\"auth\",\"pad\":\"" + std::string(300, 'a') + "\",\"token\":\"" + token + "\"}"));
+  rig.bridge.onButton(ButtonEvent::LongPress, rig.now);
+  TEST_ASSERT_FALSE(rig.bridge.authorizeWebSocketFrame("{\"type\":\"auth\",\"token\":\"" + token + "\"}"));
+}
+
 void test_random_collision_is_handled() {
   Rig rig;
   rig.platform.stuck = true;  // every token would be identical
@@ -288,6 +336,8 @@ void run_pairing_tests() {
   RUN_TEST(test_ninth_client_gets_507_until_long_press);
   RUN_TEST(test_tokens_survive_restart);
   RUN_TEST(test_storage_failures);
+  RUN_TEST(test_cleared_tokens_are_saved_even_after_a_storage_error);
+  RUN_TEST(test_websocket_auth_frame);
   RUN_TEST(test_random_collision_is_handled);
   RUN_TEST(test_serialization_round_trip_and_corruption);
   RUN_TEST(test_bearer_parsing);

@@ -207,12 +207,45 @@ allow-list. They add an installation-information duty for pre-flashed units
 core is built with `CONFIG_HTTPD_WS_SUPPORT=y`, checked in
 esp32-arduino-lib-builder `configs/defconfig.common` on 2026-11-09. So no
 library is added. **Consequences:**
-- One server task; a send waits there while the loop transmits.
+- One server task. (Superseded by ADR-026: a send no longer waits there.)
 - Request bodies need a Content-Length (the app sends one).
 - The build has no WebSocket pre-handshake hook, so a bad token on the upgrade
   closes with 1008 after the handshake, instead of 401 (documented in
-  BRIDGE_API).
+  BRIDGE_API). Superseded by ADR-026: newer builds do not call the handler
+  at the handshake at all.
 - The only LGPL code left is LGPL-2.1 (Arduino-ESP32, IRremoteESP8266), met by
   publishing the source.
 - The glue was syntax-checked against the real ESP-IDF 5.5 headers, and CI
   builds it.
+
+## ADR-026: Bridge WebSockets authenticate in band; sends are async requests
+
+**Context:** the firmware audit (docs/AUDIT_2026-11-09.md) found two defects
+in ADR-025's glue.
+- From Arduino-ESP32 3.3.11, esp_http_server no longer calls the URI handler
+  for a WebSocket handshake. The pre/post-handshake hooks are compiled out of
+  the Arduino build. So the token check on the upgrade never ran, and any LAN
+  host could receive every capture.
+- A send blocked the only server task for its whole pattern. The core's
+  `409 busy` was unreachable: a second phone's send waited in TCP and went
+  out after that phone had given up.
+
+**Decision:**
+- The client sends `{"type":"auth","token":...}` as its first frame and waits
+  for `{"type":"ready"}` before `POST /v1/learn`.
+- The bridge keeps per-session state in esp_http_server's session context,
+  which is freed with the session, so a reused fd starts unauthorized.
+  Broadcasts go only to authorized sessions (fail closed). Unauthenticated
+  sessions are closed with 1008 after 5 s.
+- Where a core still calls the handler at the handshake, a valid header
+  authorizes at once.
+- Sends use `httpd_req_async_handler_begin`, and the loop answers through
+  the async copy. Each job has a sequence number, and a 1 Hz sweep on the
+  server task answers a job the loop never took. Body reads have an absolute
+  deadline. Broadcast sends time out after 1 s.
+
+**Consequences:**
+- API version stays 1. No bridge or app has shipped, and the client already
+  sends the header, so only the added frame is new.
+- `409 busy` now reaches a second sender, as BRIDGE_API always said.
+- Not verified on hardware yet (H2).

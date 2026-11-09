@@ -14,7 +14,10 @@
 
 namespace net {
 
-void begin(const bridge::WifiCredentials& credentials, const std::string& hostname,
+// Initialises the TCP/IP stack (lwIP, esp_netif, default event loop) and
+// stores the settings. Call before anything opens a socket. False when the
+// stack could not start.
+bool begin(const bridge::WifiCredentials& credentials, const std::string& hostname,
            const std::string& apSsid);
 // Loop task. Applies the policy's mode, retries the station, scans for the
 // setup page and starts mDNS once the station is up.

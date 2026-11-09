@@ -211,6 +211,41 @@ void test_capture_message_normalises() {
   TEST_ASSERT_EQUAL_STRING("", bridge::buildCaptureMessage(c).c_str());
 }
 
+void test_capture_message_fits_the_pattern_limit() {
+  // A held NEC key: frame + ~96 ms repeat gaps stay under the capture
+  // silence, so the raw capture runs past 4 s. The message must still be
+  // something send/raw accepts.
+  bridge::Capture c;
+  c.carrierHz = 38000;
+  while (c.durationsUs.size() < 1023) {
+    c.durationsUs.push_back(9000);
+    c.durationsUs.push_back(2250);
+    c.durationsUs.push_back(560);
+    c.durationsUs.push_back(96000);
+  }
+  const std::string msg = bridge::buildCaptureMessage(c);
+  const std::string resend = "{\"carrierHz\":38000,\"durationsUs\":" +
+                             msg.substr(msg.find('['), msg.find(']') - msg.find('[') + 1) + "}";
+  SendRawJob job;
+  TEST_ASSERT_TRUE(bridge::parseSendRaw(resend, job).ok());
+  TEST_ASSERT_TRUE(job.durationsUs.size() % 2 == 1);
+  TEST_ASSERT_TRUE(job.totalUs <= bridge::kMaxPatternUs);
+  // Nothing that still fits was dropped: one more mark and space would not.
+  TEST_ASSERT_TRUE(job.totalUs + 96000 + 9000 > bridge::kMaxPatternUs);
+
+  // A single over-long first mark leaves nothing to send.
+  c.durationsUs = {150000};
+  for (int i = 0; i < 40; ++i) {
+    c.durationsUs.push_back(150000);
+    c.durationsUs.push_back(150000);
+  }
+  const std::string longMsg = bridge::buildCaptureMessage(c);
+  const std::string longResend =
+      "{\"carrierHz\":38000,\"durationsUs\":" +
+      longMsg.substr(longMsg.find('['), longMsg.find(']') - longMsg.find('[') + 1) + "}";
+  TEST_ASSERT_TRUE(bridge::parseSendRaw(longResend, job).ok());
+}
+
 void test_decoded_value_formatting() {
   bridge::DecodedSignal d;
   d.protocol = "SONY";
@@ -245,5 +280,6 @@ void run_signal_tests() {
   RUN_TEST(test_learn_body_validation);
   RUN_TEST(test_capture_message_matches_contract_example);
   RUN_TEST(test_capture_message_normalises);
+  RUN_TEST(test_capture_message_fits_the_pattern_limit);
   RUN_TEST(test_decoded_value_formatting);
 }

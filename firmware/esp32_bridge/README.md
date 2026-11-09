@@ -174,6 +174,7 @@ Why a SoftAP page and not BLE: [`docs/ADR-provisioning.md`](docs/ADR-provisionin
 | Fast flash for 2 s | Tokens were just cleared |
 | 1 s on / 1 s off | Setup access point is up |
 | Short flash every 2 s | Wi-Fi settings stored, but not connected |
+| Two short flashes every second | Cleared tokens could not be saved yet; the bridge retries every second. Until it succeeds, a restart would bring the old tokens back |
 
 ## API
 

@@ -24,7 +24,8 @@ final class FakeBridge {
   Uri? redirectTo;
   int requests = 0;
   int lastContentLength = -1;
-  bool closeUnauthorizedAfterUpgrade = false;
+  int authFrames = 0;
+  bool silentAuth = false;
   bool lastChunked = false;
   Duration wsDelay = Duration.zero;
   int learnStarts = 0;
@@ -96,17 +97,25 @@ final class FakeBridge {
       return _json(r, 200, {'token': _token});
     }
     if (path == '/v1/ws') {
-      if (!authed && closeUnauthorizedAfterUpgrade) {
-        // esp_http_server firmware: upgrade first, then close with 1008.
-        final s = await WebSocketTransformer.upgrade(r);
-        await s.close(1008, 'unauthorized');
-        return;
-      }
-      if (!authed) return _error(r, 401, 'unauthorized');
+      // Reference firmware: upgrade first, then authenticate in band. The
+      // first text frame must be {"type":"auth","token":...}; the bridge
+      // answers {"type":"ready"} or closes with 1008.
       await Future<void>.delayed(wsDelay);
-      socket = await WebSocketTransformer.upgrade(r);
+      final s = await WebSocketTransformer.upgrade(r);
       socketsOpened++;
-      socket!.listen((_) {}, onDone: () => socketsClosed++);
+      var authorized = false;
+      s.listen((msg) {
+        if (authorized || silentAuth) return;
+        final m = msg is String ? jsonDecode(msg) : null;
+        if (m is Map && m['type'] == 'auth' && m['token'] == _token) {
+          authorized = true;
+          authFrames++;
+          socket = s;
+          s.add(jsonEncode({'type': 'ready'}));
+        } else {
+          unawaited(s.close(1008, 'unauthorized'));
+        }
+      }, onDone: () => socketsClosed++);
       return;
     }
     if (!authed) return _error(r, 401, 'unauthorized');
@@ -333,6 +342,7 @@ void main() {
       final first = client.learn()!.first;
       await _waitFor(() => bridge.socket != null && bridge.learning);
       expect(bridge.learnTimeoutMs, 15000);
+      expect(bridge.authFrames, 1, reason: 'authenticated in band first');
       bridge.socket!
         ..add('not json')
         ..add(
@@ -417,6 +427,14 @@ void main() {
       expect(bridge.learnStarts, 0);
     });
 
+    test('learn mode starts only after the bridge confirms the auth '
+        'frame', () async {
+      bridge.silentAuth = true;
+      await expectLater(client.learn()!, emitsError(isA<TimeoutException>()));
+      expect(bridge.learnStarts, 0);
+      await _waitFor(() => bridge.socketsClosed == 1);
+    });
+
     test('dispose ends an open learn stream', () async {
       final done = client.learnStream(continuous: true).toList();
       await _waitFor(() => bridge.socket != null && bridge.learning);
@@ -496,8 +514,7 @@ void main() {
     await expectLater(client.learn()!, emitsError(anything));
   });
 
-  test('a 1008 close after the upgrade surfaces as unauthorized', () async {
-    bridge.closeUnauthorizedAfterUpgrade = true;
+  test('an unknown token in the auth frame surfaces as unauthorized', () async {
     client.token = 'ffffffffffffffffffffffffffffffff';
     await expectLater(
       client.learn()!,

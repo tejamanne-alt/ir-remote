@@ -5,24 +5,30 @@
 // of the Arduino-ESP32 core: no extra libraries, and nothing LGPL-3.0.
 //
 // Notes on esp_http_server behaviour this file relies on (ESP-IDF 5.5):
-// - Handlers run one at a time on the server task. A send waits there for the
-//   loop task to finish transmitting, so /v1/info answers after the LED is
-//   free; the core still reports 409 busy for overlapping sends.
+// - Handlers run one at a time on the server task. A send is handed to the
+//   loop task as an async request (httpd_req_async_handler_begin), so the
+//   server keeps answering while the LED transmits and the core's 409 busy
+//   reaches a second sender. Each job carries a sequence number: a reply can
+//   only complete the request it belongs to.
 // - Request bodies need a Content-Length (no chunked uploads); the app sends
-//   one (docs/BRIDGE_API.md).
-// - The Arduino build has no WebSocket pre-handshake hook, so the token on an
-//   upgrade is checked right after the handshake and a bad one closes the
-//   socket with code 1008 (contract note in docs/BRIDGE_API.md).
+//   one (docs/BRIDGE_API.md). Body reads have an absolute deadline.
+// - WebSocket authentication is in-band (ADR-026): depending on the core
+//   version the handler may not run at the handshake at all, so a session is
+//   unauthorized until its first text frame carries a paired token. Only
+//   authorized sessions receive broadcasts; others are closed with 1008 after
+//   kWsAuthTimeoutMs. Where the handler does run at the handshake, a valid
+//   Authorization header authorizes at once and a bad one closes with 1008.
 #include "http_api.h"
 
 #include <Arduino.h>
 #include <esp_timer.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/semphr.h>
+#include <lwip/sockets.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <memory>
+#include <new>
 #include <optional>
 #include <string>
 
@@ -32,26 +38,73 @@ namespace {
 
 constexpr size_t kMaxClients = 16;
 constexpr size_t kMaxWsInboundFrame = 512;
+constexpr uint64_t kTakeTimeoutMs = 3000;      // loop must pick a job up within this
+constexpr uint64_t kBodyDeadlineMs = 15000;    // whole body (at most 16 KiB)
+constexpr uint64_t kOtaDeadlineMs = 180000;    // whole image (under 2 MB)
+constexpr size_t kMaxRefusalDrainBytes = 64 * 1024;
+constexpr uint64_t kRefusalDrainMs = 2000;
+constexpr int kWsSendTimeoutS = 1;             // a stalled WebSocket peer is dropped
 
 httpd_handle_t server = nullptr;
 bridge::Bridge* core = nullptr;
 PortalHooks portal;
 std::mutex lock;
+esp_timer_handle_t sweepTimer = nullptr;
+std::atomic<bool> closeAllPending{false};
 
 // The one transmission in flight (the core refuses a second with 409 busy).
-std::mutex slotLock;
-struct Slot {
-  bool pending = false;  // posted by a handler, not yet taken by the loop
+struct TxJob {
+  uint32_t seq = 0;
+  httpd_req_t* request = nullptr;  // async copy, completed exactly once
   bridge::SendRawJob job;
-  bridge::Response response;
-} slot;
-SemaphoreHandle_t slotDone = nullptr;
+  uint64_t postedMs = 0;
+  bool taken = false;  // the loop task has it
+};
+std::mutex slotLock;
+std::optional<TxJob> slot;
+uint32_t nextSeq = 1;
 
 uint64_t nowMs() { return static_cast<uint64_t>(esp_timer_get_time()) / 1000; }
 
+// Per-session WebSocket state, owned by esp_http_server's session context
+// (freed when the session closes, so a reused fd never inherits it).
+struct WsSession {
+  bool authorized = false;
+  uint64_t firstSeenMs = 0;
+};
+
+void freeWsSession(void* p) { delete static_cast<WsSession*>(p); }
+
+WsSession* wsSession(httpd_handle_t hd, int fd) {
+  auto* s = static_cast<WsSession*>(httpd_sess_get_ctx(hd, fd));
+  if (s != nullptr) return s;
+  s = new (std::nothrow) WsSession();
+  if (s == nullptr) return nullptr;
+  s->firstSeenMs = nowMs();
+  httpd_sess_set_ctx(hd, fd, s, freeWsSession);
+  return s;
+}
+
+void markAuthorized(httpd_handle_t hd, int fd, WsSession* s) {
+  s->authorized = true;
+  // Broadcasts run on the server task: never let one peer stall it for the
+  // default 10 s send timeout.
+  struct timeval tv;
+  tv.tv_sec = kWsSendTimeoutS;
+  tv.tv_usec = 0;
+  setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+  static const char kReady[] = "{\"type\":\"ready\"}";
+  httpd_ws_frame_t frame;
+  std::memset(&frame, 0, sizeof(frame));
+  frame.final = true;
+  frame.type = HTTPD_WS_TYPE_TEXT;
+  frame.payload = reinterpret_cast<uint8_t*>(const_cast<char*>(kReady));
+  frame.len = sizeof(kReady) - 1;
+  httpd_ws_send_frame_async(hd, fd, &frame);
+}
+
 struct WsWork {
   std::string text;
-  bool closeAll = false;
 };
 
 void closeWebSocket(httpd_handle_t hd, int fd) {
@@ -63,23 +116,30 @@ void closeWebSocket(httpd_handle_t hd, int fd) {
   frame.type = HTTPD_WS_TYPE_CLOSE;
   frame.payload = const_cast<uint8_t*>(kPayload);
   frame.len = sizeof(kPayload);
+  WsSession* s = static_cast<WsSession*>(httpd_sess_get_ctx(hd, fd));
+  if (s != nullptr) s->authorized = false;  // no broadcast reaches it any more
   httpd_ws_send_frame_async(hd, fd, &frame);
   httpd_sess_trigger_close(hd, fd);
+}
+
+size_t webSockets(int* fds) {
+  size_t count = kMaxClients;
+  if (server == nullptr || httpd_get_client_list(server, &count, fds) != ESP_OK) return 0;
+  size_t n = 0;
+  for (size_t i = 0; i < count; ++i) {
+    if (httpd_ws_get_fd_info(server, fds[i]) == HTTPD_WS_CLIENT_WEBSOCKET) fds[n++] = fds[i];
+  }
+  return n;
 }
 
 // Runs on the server task (queued with httpd_queue_work).
 void wsWork(void* arg) {
   std::unique_ptr<WsWork> work(static_cast<WsWork*>(arg));
-  if (server == nullptr) return;
-  size_t count = kMaxClients;
   int fds[kMaxClients];
-  if (httpd_get_client_list(server, &count, fds) != ESP_OK) return;
-  for (size_t i = 0; i < count; ++i) {
-    if (httpd_ws_get_fd_info(server, fds[i]) != HTTPD_WS_CLIENT_WEBSOCKET) continue;
-    if (work->closeAll) {
-      closeWebSocket(server, fds[i]);
-      continue;
-    }
+  const size_t n = webSockets(fds);
+  for (size_t i = 0; i < n; ++i) {
+    auto* s = static_cast<WsSession*>(httpd_sess_get_ctx(server, fds[i]));
+    if (s == nullptr || !s->authorized) continue;  // fail closed
     httpd_ws_frame_t frame;
     std::memset(&frame, 0, sizeof(frame));
     frame.final = true;
@@ -92,34 +152,103 @@ void wsWork(void* arg) {
   }
 }
 
-bridge::Response waitForTransmit(bridge::SendRawJob job) {
-  const uint64_t patternMs = job.totalUs / 1000;
-  xSemaphoreTake(slotDone, 0);  // drop a signal left by an abandoned wait
+void finishJob(TxJob& job, const bridge::Response& response) {
+  send(job.request, response);
+  httpd_req_async_handler_complete(job.request);
+  job.request = nullptr;
+}
+
+// Runs on the server task once a second (queued by an esp_timer).
+void sweepWork(void*) {
+  const uint64_t now = nowMs();
+  // 1. A job the loop never took (the loop stalled): answer it and free the
+  //    busy state. A job already taken is completed by the loop.
+  std::optional<TxJob> stale;
   {
     std::lock_guard<std::mutex> g(slotLock);
-    slot = Slot();
-    slot.pending = true;
-    slot.job = std::move(job);
+    if (slot && !slot->taken && now - slot->postedMs > kTakeTimeoutMs) {
+      stale = std::move(slot);
+      slot.reset();
+    }
   }
-  // The loop picks the job up within a few milliseconds; allow the pattern's
-  // own length plus a margin.
-  const TickType_t wait = pdMS_TO_TICKS(patternMs + 3000);
-  if (xSemaphoreTake(slotDone, wait) == pdTRUE) {
-    std::lock_guard<std::mutex> g(slotLock);
-    return slot.response;
+  if (stale) {
+    {
+      std::lock_guard<std::mutex> g(lock);
+      core->finishTransmit(0);  // clears the busy state; its reply is not used
+    }
+    log_e("transmission %u was never started", static_cast<unsigned>(stale->seq));
+    finishJob(*stale, bridge::errorResponse(500, bridge::err::kTransmitFailed, "the IR task did not run"));
   }
-  bool neverStarted = false;
+  // 2. WebSocket sessions: close everything after the tokens were cleared,
+  //    and drop sessions that did not authenticate in time.
+  const bool closeAll = closeAllPending.exchange(false);
+  int fds[kMaxClients];
+  const size_t n = webSockets(fds);
+  for (size_t i = 0; i < n; ++i) {
+    if (closeAll) {
+      closeWebSocket(server, fds[i]);
+      continue;
+    }
+    WsSession* s = wsSession(server, fds[i]);
+    if (s != nullptr && !s->authorized && now - s->firstSeenMs > bridge::kWsAuthTimeoutMs) {
+      closeWebSocket(server, fds[i]);
+    }
+  }
+}
+
+void onSweepTimer(void*) {
+  if (server != nullptr) httpd_queue_work(server, sweepWork, nullptr);  // retried next second
+}
+
+// Refuses a request whose body has not been read. The body is drained (up to
+// a bound) so the client sees the response: closing with unread data makes
+// lwIP send a RST, which can discard the response before it is delivered.
+esp_err_t refuse(httpd_req_t* r, const bridge::Response& response) {
+  if (r->content_len > kMaxRefusalDrainBytes) httpd_resp_set_hdr(r, "Connection", "close");
+  send(r, response);
+  if (r->content_len == 0) return ESP_OK;
+  size_t remaining = std::min<size_t>(r->content_len, kMaxRefusalDrainBytes);
+  const uint64_t deadline = nowMs() + kRefusalDrainMs;
+  char buf[512];
+  while (remaining > 0 && nowMs() < deadline) {
+    const int n = httpd_req_recv(r, buf, std::min(sizeof(buf), remaining));
+    if (n == HTTPD_SOCK_ERR_TIMEOUT) continue;
+    if (n <= 0) break;
+    remaining -= static_cast<size_t>(n);
+  }
+  // Keep the connection only when the whole body was read.
+  return (remaining == 0 && r->content_len <= kMaxRefusalDrainBytes) ? ESP_OK : ESP_FAIL;
+}
+
+// The core accepted a send (and is now busy): hand it to the loop task.
+esp_err_t startTransmit(httpd_req_t* r, bridge::SendRawJob job) {
+  bool occupied = false;
   {
     std::lock_guard<std::mutex> g(slotLock);
-    neverStarted = slot.pending;
-    slot.pending = false;
+    // The previous job is finished in the core but its reply is still being
+    // sent: refuse this one as busy, and clear the busy state it just set.
+    occupied = slot.has_value();
   }
-  if (neverStarted) {
-    std::lock_guard<std::mutex> g(lock);
-    core->finishTransmit(0);  // clear the busy state; its reply is not used
+  httpd_req_t* copy = nullptr;
+  if (occupied || httpd_req_async_handler_begin(r, &copy) != ESP_OK || copy == nullptr) {
+    {
+      std::lock_guard<std::mutex> g(lock);
+      core->finishTransmit(0);
+    }
+    return send(r, occupied ? bridge::errorResponse(409, bridge::err::kBusy,
+                                                    "a transmission is in progress; retry after it")
+                            : bridge::errorResponse(500, bridge::err::kTransmitFailed, "out of memory"));
   }
-  log_e("transmission did not complete in time");
-  return bridge::errorResponse(500, bridge::err::kTransmitFailed, "the IR task did not run");
+  // Only this task fills the slot, so it is still empty.
+  std::lock_guard<std::mutex> g(slotLock);
+  TxJob t;
+  t.seq = nextSeq++;
+  if (nextSeq == 0) nextSeq = 1;
+  t.request = copy;
+  t.job = std::move(job);
+  t.postedMs = nowMs();
+  slot = std::move(t);
+  return ESP_OK;  // the loop answers through the async copy
 }
 
 esp_err_t handleOta(httpd_req_t* r) {
@@ -133,18 +262,15 @@ esp_err_t handleOta(httpd_req_t* r) {
     std::lock_guard<std::mutex> g(lock);
     refusal = core->otaBegin(o, nowMs());
   }
-  if (refusal) {
-    send(r, *refusal);
-    // Do not drain a refused image: close the connection instead.
-    return r->content_len > 0 ? ESP_FAIL : ESP_OK;
-  }
+  if (refusal) return refuse(r, *refusal);
   std::unique_ptr<uint8_t[]> buf(new uint8_t[1024]);
   size_t remaining = r->content_len;
   int timeouts = 0;
+  const uint64_t deadline = nowMs() + kOtaDeadlineMs;
   while (remaining > 0) {
     const int n = httpd_req_recv(r, reinterpret_cast<char*>(buf.get()), std::min<size_t>(1024, remaining));
-    if (n == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < 3) continue;
-    if (n <= 0) {
+    if (n == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < 3 && nowMs() < deadline) continue;
+    if (n <= 0 || nowMs() >= deadline) {
       std::lock_guard<std::mutex> g(lock);
       core->otaAbort();
       return ESP_FAIL;  // client went away: drop the partial image
@@ -184,10 +310,7 @@ esp_err_t handleHttp(httpd_req_t* r) {
     std::lock_guard<std::mutex> g(lock);
     pf = core->preflight(req.method, req.path, req.authorization, req.contentLength);
   }
-  if (!pf.ok) {
-    send(r, pf.error);
-    return r->content_len > bridge::kMaxBodyBytes ? ESP_FAIL : ESP_OK;
-  }
+  if (!pf.ok) return refuse(r, pf.error);
   if (!readBody(r, req.body, bridge::kMaxBodyBytes)) return ESP_FAIL;
 
   bridge::Outcome out;
@@ -204,7 +327,7 @@ esp_err_t handleHttp(httpd_req_t* r) {
     case bridge::Action::AcceptWebSocket:
       return send(r, bridge::errorResponse(426, bridge::err::kUpgradeRequired, "use a WebSocket client"));
     case bridge::Action::Transmit:
-      return send(r, waitForTransmit(std::move(out.job)));
+      return startTransmit(r, std::move(out.job));
   }
   return send(r, bridge::errorResponse(500, bridge::err::kTransmitFailed, "unexpected outcome"));
 }
@@ -214,19 +337,26 @@ esp_err_t handleWs(httpd_req_t* r) {
   if (httpd_ws_get_fd_info(r->handle, fd) != HTTPD_WS_CLIENT_WEBSOCKET) {
     return handleHttp(r);  // a plain GET without an upgrade: 426 from the core
   }
+  WsSession* session = wsSession(r->handle, fd);
+  if (session == nullptr) return ESP_FAIL;  // out of memory: drop the client
   if (r->method == HTTP_GET) {
-    // The handshake just completed. The contract requires a valid token on
-    // the upgrade request, whose headers are still available here.
+    // Older cores call the handler right after the handshake, with the
+    // upgrade request's headers still available: check them now. Newer
+    // cores skip this call, and the auth frame below is the only check.
     bridge::Preflight pf;
     {
       std::lock_guard<std::mutex> g(lock);
       pf = core->preflight(bridge::Method::Get, "/v1/ws", header(r, "Authorization"), 0);
     }
-    if (!pf.ok) closeWebSocket(r->handle, fd);
-    return ESP_OK;
+    if (pf.ok) {
+      markAuthorized(r->handle, fd, session);
+    } else if (!header(r, "Authorization").empty()) {
+      closeWebSocket(r->handle, fd);  // a wrong token: refuse now
+    }
+    return ESP_OK;  // no header: wait for the auth frame
   }
-  // A frame from the client. The stream is server-to-client only: read and
-  // discard it, and drop clients that send oversized frames.
+  // A frame from the client. Only the auth frame means anything; drop
+  // clients that send oversized frames.
   httpd_ws_frame_t frame;
   std::memset(&frame, 0, sizeof(frame));
   if (httpd_ws_recv_frame(r, &frame, 0) != ESP_OK) return ESP_FAIL;
@@ -234,7 +364,19 @@ esp_err_t handleWs(httpd_req_t* r) {
   if (frame.len > kMaxWsInboundFrame) return ESP_FAIL;
   uint8_t buf[kMaxWsInboundFrame];
   frame.payload = buf;
-  return httpd_ws_recv_frame(r, &frame, frame.len);
+  if (httpd_ws_recv_frame(r, &frame, frame.len) != ESP_OK) return ESP_FAIL;
+  if (session->authorized || frame.type != HTTPD_WS_TYPE_TEXT) return ESP_OK;
+  bool ok = false;
+  {
+    std::lock_guard<std::mutex> g(lock);
+    ok = core->authorizeWebSocketFrame(std::string(reinterpret_cast<char*>(buf), frame.len));
+  }
+  if (ok) {
+    markAuthorized(r->handle, fd, session);
+  } else {
+    closeWebSocket(r->handle, fd);
+  }
+  return ESP_OK;
 }
 
 }  // namespace
@@ -268,7 +410,11 @@ bool readBody(httpd_req_t* r, std::string& out, size_t cap) {
   out.reserve(remaining);
   char buf[512];
   int timeouts = 0;
+  // An absolute deadline: a peer trickling one byte at a time cannot hold
+  // the only server task for long.
+  const uint64_t deadline = nowMs() + kBodyDeadlineMs;
   while (remaining > 0) {
+    if (nowMs() >= deadline) return false;
     const int n = httpd_req_recv(r, buf, std::min(sizeof(buf), remaining));
     if (n == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts < 3) continue;
     if (n <= 0) return false;
@@ -297,7 +443,6 @@ esp_err_t redirect(httpd_req_t* r, const std::string& location) {
 bool begin(bridge::Bridge& bridgeCore, PortalHooks hooks) {
   core = &bridgeCore;
   portal = hooks;
-  slotDone = xSemaphoreCreateBinary();
 
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = bridge::kHttpPort;
@@ -308,7 +453,7 @@ bool begin(bridge::Bridge& bridgeCore, PortalHooks hooks) {
   config.recv_wait_timeout = 10;
   config.send_wait_timeout = 10;
   config.uri_match_fn = httpd_uri_match_wildcard;
-  if (slotDone == nullptr || httpd_start(&server, &config) != ESP_OK) {
+  if (httpd_start(&server, &config) != ESP_OK) {
     log_e("HTTP server failed to start");
     server = nullptr;
     return false;
@@ -334,36 +479,54 @@ bool begin(bridge::Bridge& bridgeCore, PortalHooks hooks) {
     any.handler = handleHttp;
     httpd_register_uri_handler(server, &any);
   }
+
+  esp_timer_create_args_t timer;
+  std::memset(&timer, 0, sizeof(timer));
+  timer.callback = onSweepTimer;
+  timer.name = "httpd_sweep";
+  if (esp_timer_create(&timer, &sweepTimer) != ESP_OK ||
+      esp_timer_start_periodic(sweepTimer, 1000000) != ESP_OK) {
+    log_e("HTTP sweep timer failed to start");
+    return false;
+  }
   return true;
 }
 
-bool takePendingTransmit(bridge::SendRawJob& job) {
+bool takePendingTransmit(bridge::SendRawJob& job, uint32_t& seq) {
   std::lock_guard<std::mutex> g(slotLock);
-  if (!slot.pending) return false;
-  slot.pending = false;
-  job = std::move(slot.job);
+  if (!slot || slot->taken) return false;
+  slot->taken = true;
+  seq = slot->seq;
+  job = std::move(slot->job);
   return true;
 }
 
-void completeTransmit(const bridge::Response& response) {
+void completeTransmit(uint32_t seq, const bridge::Response& response) {
+  std::optional<TxJob> done;
   {
     std::lock_guard<std::mutex> g(slotLock);
-    slot.response = response;
+    if (!slot || slot->seq != seq) return;  // not ours (cannot happen once taken)
+    done = std::move(slot);
+    slot.reset();
   }
-  xSemaphoreGive(slotDone);
+  // Sending on an async request from another task is what the async API is
+  // for; the server task keeps serving meanwhile.
+  finishJob(*done, response);
 }
 
 void dispatch(std::vector<bridge::Event> events) {
   if (server == nullptr) return;
   for (bridge::Event& e : events) {
-    std::unique_ptr<WsWork> work(new WsWork());
-    if (e.kind == bridge::Event::Kind::WebSocketText) {
-      work->text = std::move(e.text);
-    } else if (e.kind == bridge::Event::Kind::CloseWebSockets) {
-      work->closeAll = true;
-    } else {
+    if (e.kind == bridge::Event::Kind::CloseWebSockets) {
+      // Done by the next sweep, which retries until the server task runs
+      // it: revoked sessions must not stay open because a queue was full.
+      closeAllPending = true;
       continue;
     }
+    if (e.kind != bridge::Event::Kind::WebSocketText) continue;
+    std::unique_ptr<WsWork> work(new (std::nothrow) WsWork());
+    if (work == nullptr) continue;
+    work->text = std::move(e.text);
     if (httpd_queue_work(server, wsWork, work.get()) == ESP_OK) work.release();
   }
 }

@@ -63,8 +63,12 @@ class TokenStore {
   // Constant-time across all slots and characters.
   bool contains(const std::string& token) const;
   // Forgets every token in memory, then persists. Returns false when the
-  // empty list could not be written.
+  // empty list could not be written: memory is already empty, so the old
+  // tokens stop working at once, but call persist() until it succeeds or
+  // they come back after a restart.
   bool clear();
+  // Writes the in-memory list. Returns false on a storage error.
+  bool persist();
 
   size_t size() const { return clients_.size(); }
   bool full() const { return clients_.size() >= kMaxPairedClients; }

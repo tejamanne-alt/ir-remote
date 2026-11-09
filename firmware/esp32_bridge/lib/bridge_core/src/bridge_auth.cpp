@@ -152,7 +152,9 @@ bool TokenStore::contains(const std::string& token) const {
 
 bool TokenStore::clear() {
   clients_.clear();
-  return storage_.saveBlob(serializeClients(clients_));
+  return persist();
 }
+
+bool TokenStore::persist() { return storage_.saveBlob(serializeClients(clients_)); }
 
 }  // namespace bridge

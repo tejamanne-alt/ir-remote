@@ -4,6 +4,8 @@
 
 #include <utility>
 
+#include "bridge_json.h"
+
 namespace bridge {
 
 namespace {
@@ -75,6 +77,30 @@ bool Bridge::begin() { return tokens_.load(); }
 bool Bridge::authorized(const std::string& authorization) const {
   std::string token;
   if (!parseBearer(authorization, token)) return false;
+  return tokens_.contains(token);
+}
+
+bool Bridge::authorizeWebSocketFrame(const std::string& frame) const {
+  if (frame.size() > kMaxWsAuthFrameBytes) return false;
+  json::Reader r(frame);
+  if (!r.enterObject()) return false;
+  std::string key;
+  std::string type;
+  std::string token;
+  bool truncated = false;
+  while (r.nextMember(key)) {
+    if (key == "type") {
+      if (r.peekType() != json::Type::String || !r.readString(&type, 16, &truncated)) return false;
+    } else if (key == "token") {
+      if (r.peekType() != json::Type::String ||
+          !r.readString(&token, kTokenHexLength + 1, &truncated)) {
+        return false;
+      }
+    } else if (!r.skipValue()) {
+      return false;
+    }
+  }
+  if (!r.ok() || !r.expectEnd() || truncated || type != "auth") return false;
   return tokens_.contains(token);
 }
 
@@ -283,6 +309,10 @@ std::optional<Response> Bridge::otaBegin(const OtaRequest& request, uint64_t now
   if (otaTarget_ == nullptr) {
     return errorResponse(501, err::kNotImplemented, "this build cannot update over the network");
   }
+  if (rebootRequested_) {
+    // The new image is already active; a second update would overwrite it.
+    return errorResponse(409, err::kBusy, "restarting to apply an update");
+  }
   if (transmitting_) {
     return errorResponse(409, err::kBusy, "a transmission is in progress; retry after it");
   }
@@ -313,6 +343,8 @@ bool Bridge::onButton(ButtonEvent event, uint64_t nowMs) {
     case ButtonEvent::LongPress:
     case ButtonEvent::FactoryResetPress: {
       const bool persisted = tokens_.clear();
+      persistPending_ = !persisted;
+      lastPersistTryMs_ = nowMs;
       window_.close();
       clearedFlash_ = true;
       clearedAtMs_ = nowMs;
@@ -339,6 +371,10 @@ void Bridge::tick(uint64_t nowMs) {
     pushEvent(Event{Event::Kind::WebSocketText, buildLearnTimeoutMessage()});
   }
   if (clearedFlash_ && elapsedMs(nowMs, clearedAtMs_) >= kClearedFlashMs) clearedFlash_ = false;
+  if (persistPending_ && elapsedMs(nowMs, lastPersistTryMs_) >= kStorageRetryMs) {
+    lastPersistTryMs_ = nowMs;
+    persistPending_ = !tokens_.persist();
+  }
 }
 
 void Bridge::pushEvent(Event event) {
@@ -358,6 +394,7 @@ LedPattern Bridge::ledPattern(uint64_t nowMs) const {
   if (clearedFlash_ && elapsedMs(nowMs, clearedAtMs_) < kClearedFlashMs) {
     return LedPattern::ClearedFlash;
   }
+  if (persistPending_) return LedPattern::StorageError;
   if (window_.isOpen(nowMs)) return LedPattern::PairingBlink;
   if (learning()) return LedPattern::Solid;
   return LedPattern::Off;

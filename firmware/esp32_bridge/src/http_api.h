@@ -29,10 +29,11 @@ std::mutex& coreLock();
 // Starts the server on bridge::kHttpPort. Returns false if it could not start.
 bool begin(bridge::Bridge& core, PortalHooks portal);
 
-// Loop task: takes the transmission waiting for the IR LED, if any.
-bool takePendingTransmit(bridge::SendRawJob& job);
-// Loop task: hands the result of that transmission back to the waiting request.
-void completeTransmit(const bridge::Response& response);
+// Loop task: takes the transmission waiting for the IR LED, if any, and its
+// sequence number.
+bool takePendingTransmit(bridge::SendRawJob& job, uint32_t& seq);
+// Loop task: answers the request of transmission `seq` with its result.
+void completeTransmit(uint32_t seq, const bridge::Response& response);
 // Any task, without coreLock held: carries out core events (WebSocket text,
 // closing sessions after the tokens were cleared). Runs on the server task.
 void dispatch(std::vector<bridge::Event> events);

@@ -110,12 +110,26 @@ Response: `202 {"learning": true}`.
 
 `200 {"learning": false}`
 
-### `GET /v1/ws` (WebSocket, auth header required on the upgrade)
+### `GET /v1/ws` (WebSocket, authenticated in band)
 
-The reference firmware (esp_http_server) completes the handshake and then
-closes at once with status 1008 when the token is missing or unknown; a
-server that can check before the handshake may answer `401` instead.
-Clients must treat both as "not authorized".
+The client sends `Authorization: Bearer <token>` on the upgrade and then,
+as its first text frame:
+
+```json
+{"type": "auth", "token": "<token>"}
+```
+
+The bridge answers `{"type": "ready"}` and only then sends that session
+any other message. An unknown token closes the socket with status 1008.
+A session that has not authenticated within 5 s is closed with 1008 too.
+A server that can check the header before the handshake may answer `401`
+instead. Clients must treat 1008 and 401 as "not authorized", and must wait
+for `ready` before `POST /v1/learn`, so no capture can be missed.
+
+Why in band: some esp_http_server builds do not call the handler for the
+handshake at all, so the reference firmware cannot rely on seeing the
+upgrade headers (ADR-026). Other client frames are ignored. A peer that
+stops reading is dropped after about 1 s of blocked sends.
 
 Server-to-client messages:
 
@@ -124,6 +138,7 @@ Server-to-client messages:
  "decoded": {"protocol": "NEC", "value": "0x20DF10EF", "bits": 32}, "atMs": 123456}
 {"type": "learn_timeout"}
 {"type": "learn_stopped"}
+{"type": "ready"}
 ```
 
 - `carrierHz` is `null` when the receiver module demodulates and cannot measure
@@ -132,6 +147,9 @@ Server-to-client messages:
   The app runs its own decoder anyway.
 - Captures start with a mark. The firmware drops the leading gap and ends a
   capture after 100 ms of silence.
+- A capture is always re-sendable as it is: at most `maxDurations` values and
+  `maxPatternUs` in total, ending on a mark. A held key whose repeats arrive
+  closer than 100 ms is cut at the last frame that fits.
 
 ### `POST /v1/ota`
 
@@ -139,6 +157,8 @@ The body is the raw firmware image. Headers are `Authorization`,
 `X-Firmware-SHA256: <hex>` and `Content-Length`. The firmware checks the hash
 before it switches partitions. Success:
 `200 {"updated": true, "rebooting": true}`. Errors: `400 bad_request`
-(missing headers), `400 hash_mismatch`, `400 bad_image`, `500 ota_failed`.
+(missing headers), `400 hash_mismatch`, `400 bad_image`, `500 ota_failed`,
+`409 busy` during a transmission, another update, or the restart after a
+successful update.
 The design is in `firmware/esp32_bridge/docs/ADR-ota.md`. OTA proves
 integrity, not origin (OPEN_QUESTIONS Q14).

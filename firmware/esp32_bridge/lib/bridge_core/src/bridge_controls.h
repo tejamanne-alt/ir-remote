@@ -81,6 +81,7 @@ enum class LedPattern : uint8_t {
   ClearedFlash,       // 10 Hz for 2 s after the tokens were cleared
   ProvisioningBlink,  // 0.5 Hz while the setup access point is up
   OfflineBlip,        // 100 ms flash every 2 s: credentials stored, not connected
+  StorageError,       // two 100 ms flashes every second: cleared tokens not saved yet
 };
 
 // LED level for a pattern at a point in time.

@@ -97,6 +97,9 @@ class Bridge {
   // kMaxBodyBytes (except /v1/ota), 401 missing or unknown token.
   Preflight preflight(Method method, const std::string& path, const std::string& authorization,
                       uint64_t bodyBytes) const;
+  // WebSocket in-band authentication: true when `frame` (the client's text
+  // frame) is {"type":"auth","token":"<paired token>"}.
+  bool authorizeWebSocketFrame(const std::string& frame) const;
   // Handles one complete request (everything except the OTA body stream).
   Outcome handle(const Request& request, uint64_t nowMs);
   // Call after carrying out a Transmit outcome; clears the busy state.
@@ -114,7 +117,8 @@ class Bridge {
   bool rebootRequested() const { return rebootRequested_; }
 
   // --- Device events -----------------------------------------------------
-  // Returns false when clearing tokens could not be persisted.
+  // Returns false when clearing tokens could not be persisted; tick() then
+  // retries until it succeeds (storageErrorPending()).
   bool onButton(ButtonEvent event, uint64_t nowMs);
   void onCapture(const Capture& capture);
   void tick(uint64_t nowMs);
@@ -126,6 +130,7 @@ class Bridge {
   bool learning() const { return learnMode_ != LearnMode::Idle; }
   bool transmitting() const { return transmitting_; }
   size_t pairedClients() const { return tokens_.size(); }
+  bool storageErrorPending() const { return persistPending_; }
   LedPattern ledPattern(uint64_t nowMs) const;
   const Identity& identity() const { return identity_; }
 
@@ -154,6 +159,8 @@ class Bridge {
   uint64_t clearedAtMs_ = 0;
   OtaSession ota_;
   bool rebootRequested_ = false;
+  bool persistPending_ = false;  // the token list in memory is not in storage yet
+  uint64_t lastPersistTryMs_ = 0;
   std::vector<Event> events_;
 };
 

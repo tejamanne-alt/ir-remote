@@ -46,6 +46,14 @@ constexpr uint32_t kDefaultLearnTimeoutMs = 15000;
 constexpr uint32_t kMaxLearnTimeoutMs = 3600000;  // not in the contract; see README
 constexpr uint32_t kCaptureSilenceMs = 100;
 
+// WebSocket: a client must send its auth frame within this time, or it is
+// closed with 1008 (docs/BRIDGE_API.md, "GET /v1/ws").
+constexpr uint32_t kWsAuthTimeoutMs = 5000;
+constexpr size_t kMaxWsAuthFrameBytes = 256;
+
+// How often a failed write of the token list is retried.
+constexpr uint32_t kStorageRetryMs = 1000;
+
 // Wi-Fi provisioning.
 constexpr size_t kMaxBridgeNameChars = 32;
 constexpr uint32_t kSetupPortalMs = 10u * 60u * 1000u;

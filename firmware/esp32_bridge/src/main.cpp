@@ -92,7 +92,8 @@ void handleCapture(uint64_t now) {
 
 void handleTransmit() {
   bridge::SendRawJob job;
-  if (!http_api::takePendingTransmit(job)) return;
+  uint32_t seq = 0;
+  if (!http_api::takePendingTransmit(job, seq)) return;
   // Not holding the core lock: the core keeps answering (409 busy for a
   // second send) while the LED is busy.
   const uint64_t elapsedUs = ir_io::transmit(job);
@@ -101,7 +102,7 @@ void handleTransmit() {
     std::lock_guard<std::mutex> g(http_api::coreLock());
     response = core->finishTransmit(elapsedUs);
   }
-  http_api::completeTransmit(response);
+  http_api::completeTransmit(seq, response);
 }
 
 void updateLed(uint64_t now) {
@@ -162,7 +163,12 @@ void setup() {
 
   ir_io::begin();
   wifiPolicy.begin(hasCredentials, nowMs());
-  net::begin(credentials, bridge::hostnameFromMac(mac), bridge::apSsidFromMac(mac));
+  // The TCP/IP stack must exist before the HTTP server opens its socket.
+  if (!net::begin(credentials, bridge::hostnameFromMac(mac), bridge::apSsidFromMac(mac))) {
+    log_e("network stack unavailable; restarting");
+    restartAtMs = nowMs() + board::kRestartDelayMs;
+    return;
+  }
   portal::begin(identity.name);
   if (!http_api::begin(*core, http_api::PortalHooks{portal::claims, portal::handle})) {
     log_e("HTTP API unavailable; restarting");

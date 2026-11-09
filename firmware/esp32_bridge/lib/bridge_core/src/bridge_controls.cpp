@@ -53,6 +53,10 @@ bool ledLevel(LedPattern pattern, uint64_t nowMs) {
     case LedPattern::ClearedFlash: return (nowMs % 100) < 50;
     case LedPattern::ProvisioningBlink: return (nowMs % 2000) < 1000;
     case LedPattern::OfflineBlip: return (nowMs % 2000) < 100;
+    case LedPattern::StorageError: {
+      const uint64_t t = nowMs % 1000;
+      return t < 100 || (t >= 200 && t < 300);
+    }
   }
   return false;
 }

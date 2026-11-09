@@ -258,9 +258,22 @@ std::string formatDecodedValue(const DecodedSignal& decoded) {
 }
 
 std::string buildCaptureMessage(const Capture& capture) {
-  size_t count = capture.durationsUs.size();
-  if (count > kMaxDurations) count = kMaxDurations;
-  if (count % 2 == 0 && count > 0) --count;  // drop a trailing space
+  // Keep the longest prefix that ends on a mark and can be sent back as it
+  // is: at most kMaxDurations values and kMaxPatternUs in total (a held NEC
+  // key repeats every ~108 ms, under the capture silence, so a capture can
+  // otherwise run far past 4 s).
+  size_t limit = capture.durationsUs.size();
+  if (limit > kMaxDurations) limit = kMaxDurations;
+  size_t count = 0;
+  uint64_t total = 0;
+  for (size_t i = 0; i < limit; ++i) {
+    uint32_t v = capture.durationsUs[i];
+    if (v < kMinDurationUs) v = kMinDurationUs;
+    if (v > kMaxDurationUs) v = kMaxDurationUs;
+    total += v;
+    if (total > kMaxPatternUs) break;
+    if (i % 2 == 0) count = i + 1;  // ends on a mark
+  }
   if (count == 0) return std::string();
 
   std::string out;

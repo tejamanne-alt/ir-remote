@@ -4,6 +4,7 @@
 
 #include <DNSServer.h>
 #include <ESPmDNS.h>
+#include <Network.h>
 #include <WiFi.h>
 #include <esp_http_server.h>
 #include <lwip/sockets.h>
@@ -138,13 +139,18 @@ void startMdns(const bridge::Identity& identity) {
 
 }  // namespace
 
-void begin(const bridge::WifiCredentials& credentials, const std::string& host,
+bool begin(const bridge::WifiCredentials& credentials, const std::string& host,
            const std::string& ssid) {
   creds = credentials;
   hostname = host;
   apSsid = ssid;
+  // Arduino-ESP32 3.x creates the TCP/IP stack lazily (on the first
+  // WiFi.mode()). The HTTP server starts before that, and lwIP aborts on a
+  // socket() call without it, so create it here.
+  if (!Network.begin()) return false;
   WiFi.persistent(false);  // credentials live in our own NVS namespace
   WiFi.setHostname(hostname.c_str());
+  return true;
 }
 
 void loop(uint64_t nowMs, bridge::WifiPolicy& policy, const bridge::Identity& identity) {

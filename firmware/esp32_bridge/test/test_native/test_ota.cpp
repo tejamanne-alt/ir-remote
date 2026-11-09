@@ -111,6 +111,11 @@ void test_ota_happy_path() {
   TEST_ASSERT_TRUE(rig.ota.written == rig.image);
   TEST_ASSERT_TRUE(rig.bridge.rebootRequested());
   TEST_ASSERT_FALSE(rig.bridge.otaActive());
+  // A second update during the restart delay would overwrite the image that
+  // was just activated.
+  const auto again = rig.bridge.otaBegin(rig.request(rig.digest()), rig.now);
+  TEST_ASSERT_TRUE(again.has_value());
+  TEST_ASSERT_EQUAL_INT(409, again->status);
 }
 
 void test_ota_uppercase_digest_accepted() {

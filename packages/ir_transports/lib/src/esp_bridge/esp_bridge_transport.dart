@@ -405,15 +405,24 @@ final class EspBridgeTransport implements IrTransport {
     controller = StreamController<LearnedSignal>(
       onListen: () async {
         _activeLearns.add(stop);
+        final ready = Completer<void>();
         try {
           if (_disposed) throw StateError(_closedMessage);
+          final t = token;
+          if (t == null) {
+            throw const BridgeException(
+              401,
+              'unauthorized',
+              'this hub is not paired yet; press its button and pair again',
+            );
+          }
           final wsUri = baseUri.replace(
             scheme: baseUri.scheme == 'https' ? 'wss' : 'ws',
             path: '/v1/ws',
           );
           final connecting = WebSocket.connect(
             wsUri.toString(),
-            headers: {'Authorization': 'Bearer ${token ?? ''}'},
+            headers: {'Authorization': 'Bearer $t'},
           );
           final WebSocket ws;
           try {
@@ -447,6 +456,8 @@ final class EspBridgeTransport implements IrTransport {
                   unawaited(stop(remote: false));
                 case 'learn_stopped':
                   unawaited(stop(remote: false));
+                case 'ready':
+                  if (!ready.isCompleted) ready.complete();
                 default:
                   break; // malformed or unknown: ignore
               }
@@ -470,8 +481,14 @@ final class EspBridgeTransport implements IrTransport {
                 );
               }
               unawaited(stop(remote: false));
+              if (!ready.isCompleted) ready.complete();
             },
           );
+          // In-band authentication (BRIDGE_API.md, ADR-026): the bridge
+          // answers "ready", or closes with 1008 for an unknown token.
+          ws.add(jsonEncode({'type': 'auth', 'token': t}));
+          await ready.future.timeout(requestTimeout);
+          if (closed) return; // refused (already reported) or cancelled
           await _request(
             'POST',
             '/v1/learn',
