@@ -33,6 +33,12 @@ final class TransportRegistry {
   final Map<String, DateTime> _lastHealthy = {};
   final StreamController<void> _changes = StreamController.broadcast();
 
+  bool _disposed = false;
+
+  void _notify() {
+    if (!_disposed) _changes.add(null);
+  }
+
   /// Fires whenever a transport is added, removed or its health changes.
   Stream<void> get changes => _changes.stream;
 
@@ -58,12 +64,16 @@ final class TransportRegistry {
   /// Registers [transport], replacing (and disposing) any transport with the
   /// same ID.
   Future<void> register(IrTransport transport) async {
+    if (_disposed) {
+      await transport.dispose();
+      return;
+    }
     final old = _transports.remove(transport.id);
     if (old != null) await old.dispose();
     _transports[transport.id] = transport is QueuedTransport
         ? transport
         : QueuedTransport(transport, timeout: timeout, onRecord: onRecord);
-    _changes.add(null);
+    _notify();
   }
 
   /// Removes and disposes the transport with [id].
@@ -73,7 +83,7 @@ final class TransportRegistry {
     _lastHealthy.remove(id);
     if (t != null) {
       await t.dispose();
-      _changes.add(null);
+      _notify();
     }
   }
 
@@ -92,7 +102,7 @@ final class TransportRegistry {
     final h = await t.health();
     _health[id] = h;
     if (h.isUsable) _lastHealthy[id] = h.checkedAt;
-    _changes.add(null);
+    _notify();
     return h;
   }
 
@@ -131,8 +141,11 @@ final class TransportRegistry {
     return null;
   }
 
-  /// Disposes every transport.
+  /// Disposes every transport. Health checks still in flight complete
+  /// quietly afterwards.
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     for (final t in _transports.values) {
       await t.dispose();
     }

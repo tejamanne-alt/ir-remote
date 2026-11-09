@@ -272,6 +272,19 @@ void main() {
       await reg.dispose();
     });
 
+    test('health checks finishing after dispose are ignored', () async {
+      final reg = TransportRegistry();
+      await reg.register(
+        _SlowTransport(const Duration(milliseconds: 30), id: 'h'),
+      );
+      final pending = reg.checkHealth('h');
+      await reg.dispose();
+      expect(await pending, isA<HealthStatus>());
+      await reg.dispose(); // idempotent
+      await reg.register(SimulatedTransport());
+      expect(reg.all, isEmpty);
+    });
+
     test('hubs known to be down are skipped when nothing is healthy', () async {
       final reg = TransportRegistry();
       final down = _SlowTransport(Duration.zero, id: 'down')

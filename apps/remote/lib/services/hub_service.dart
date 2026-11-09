@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:bonsoir/bonsoir.dart';
 import 'package:flutter/foundation.dart';
@@ -163,7 +164,7 @@ final class HubService extends ChangeNotifier {
   /// Known hubs.
   List<HubRecord> get hubs => _hubs;
 
-  /// The default factory: ESP32 bridge (and Broadlink once wired).
+  /// The default factory: ESP32 bridge or Broadlink hub.
   static IrTransport defaultHubTransport(HubRecord h) => switch (h.kind) {
     TransportKind.espBridge => EspBridgeTransport(
       baseUri: Uri(scheme: 'http', host: h.host, port: h.port),
@@ -171,8 +172,57 @@ final class HubService extends ChangeNotifier {
       displayName: h.name,
       token: h.token,
     ),
+    TransportKind.broadlink => BroadlinkTransport(
+      device: BroadlinkDeviceInfo(
+        address: InternetAddress(h.host),
+        port: h.port,
+        mac: parseMac(h.extra['mac']),
+        devtype: h.extra['devtype'] is int ? h.extra['devtype']! as int : 0,
+        name: h.name,
+      ),
+      displayName: h.name,
+    ),
     _ => throw UnsupportedError('hub kind ${h.kind.name} is not available'),
   };
+
+  /// Parses a stored `aa:bb:cc:dd:ee:ff` MAC; throws [UnsupportedError]
+  /// (the hub is then kept but not registered) when it is damaged.
+  static List<int> parseMac(Object? v) {
+    if (v is String) {
+      final parts = v.split(':');
+      if (parts.length == 6) {
+        final bytes = [for (final p in parts) int.tryParse(p, radix: 16)];
+        if (bytes.every((b) => b != null && b >= 0 && b <= 255)) {
+          return [for (final b in bytes) b!];
+        }
+      }
+    }
+    throw UnsupportedError('stored Broadlink MAC is invalid');
+  }
+
+  /// Probes a Broadlink hub with a unicast hello (the primary path: iOS
+  /// cannot broadcast without Apple's multicast entitlement).
+  static Future<HubRecord> probeBroadlink(String host) async {
+    final t = await BroadlinkTransport.connect(InternetAddress(host));
+    try {
+      final d = t.device;
+      if (d.model == null) {
+        throw UnsupportedError(
+          'device type ${d.devtypeHex} is not a supported RM hub',
+        );
+      }
+      return HubRecord(
+        id: t.id,
+        kind: TransportKind.broadlink,
+        name: t.displayName,
+        host: d.address.address,
+        port: d.port,
+        extra: {'mac': d.macString, 'devtype': d.devtype},
+      );
+    } finally {
+      await t.dispose();
+    }
+  }
 
   /// Loads hubs from the database, registers their transports and checks
   /// their health in the background.
@@ -263,8 +313,9 @@ final class HubService extends ChangeNotifier {
     return record;
   }
 
-  /// Probes a Broadlink hub at a host and returns its record.
-  Future<HubRecord> Function(String host)? broadlinkConnector;
+  /// Probes a Broadlink hub at a host and returns its record. Replaceable
+  /// in tests.
+  Future<HubRecord> Function(String host)? broadlinkConnector = probeBroadlink;
 
   /// Saves an already-built record.
   Future<void> saveRecord(HubRecord record) => _save(record);
