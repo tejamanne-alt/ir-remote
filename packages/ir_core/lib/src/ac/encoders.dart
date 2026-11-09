@@ -16,7 +16,7 @@ import 'ac_state.dart';
 final class AcEncoderRegistry {
   /// Creates a registry over [encoders].
   AcEncoderRegistry(List<AcEncoder> encoders)
-      : _byId = {for (final e in encoders) e.protocolId: e};
+    : _byId = {for (final e in encoders) e.protocolId: e};
 
   /// The registry of built-in encoders (empty until fixtures exist).
   static final AcEncoderRegistry standard = AcEncoderRegistry(const []);
@@ -29,9 +29,9 @@ final class AcEncoderRegistry {
   /// Encoders visible to the user: verified ones, plus unverified ones when
   /// [includeUnverified] is set (debug builds only).
   List<AcEncoder> available({required bool includeUnverified}) => [
-        for (final e in _byId.values)
-          if (e.verified || includeUnverified) e,
-      ];
+    for (final e in _byId.values)
+      if (e.verified || includeUnverified) e,
+  ];
 
   /// The encoder for [protocolId], or `null`.
   AcEncoder? lookup(String protocolId) => _byId[protocolId];

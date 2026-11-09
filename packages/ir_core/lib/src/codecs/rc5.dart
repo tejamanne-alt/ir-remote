@@ -34,7 +34,7 @@ final class Rc5 extends IrProtocol {
   String get id => 'RC5';
 
   @override
-  List<String> get aliases => const ['RC5x', 'RC-5'];
+  List<String> get aliases => const ['RC-5'];
 
   @override
   int get carrierHz => 36000;

@@ -25,6 +25,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(ROOT, 'packages', 'ir_core', 'test', 'fixtures')
 DECODEIR = 'http://www.hifi-remote.com/wiki/index.php/DecodeIR'
+IRPT = ('IrpTransmogrifier IrpProtocols.xml (IRP notation), '
+        'https://github.com/bengtmartensson/IrpTransmogrifier, checked 2026-11-09')
 LGSRC = ('https://github.com/Arduino-IRremote/Arduino-IRremote/blob/master/'
          'src/ir_LG.hpp (MIT) protocol notes, written as IRP')
 
@@ -38,7 +40,7 @@ PROTOCOLS = [
      [('f16', {'D': 4, 'S': 0x37, 'F': 0x1234})]),
     ('NEC2', '{38.4k,564}<1,-1|1,-3>(16,-8,D:8,S:8,F:8,~F:8,1,^108m)+', DECODEIR, 0,
      [('basic', {'D': 0x20, 'S': 0xDF, 'F': 0x10})]),
-    ('NECx1', '{38.4k,564}<1,-1|1,-3>(8,-8,D:8,S:8,F:8,~F:8,1,^108m,(8,-8,D:1,1,^108m)*)', DECODEIR, 0,
+    ('NECx1', '{38.4k,564}<1,-1|1,-3>(8,-8,D:8,S:8,F:8,~F:8,1,^108m,(8,-8,~D:1,1,^108m)*)', IRPT, 0,
      [('basic', {'D': 7, 'S': 7, 'F': 2}),
       ('even_device', {'D': 6, 'S': 6, 'F': 0x40})]),
     ('NECx2', '{38.4k,564}<1,-1|1,-3>(8,-8,D:8,S:8,F:8,~F:8,1,^108m)+', DECODEIR, 0,

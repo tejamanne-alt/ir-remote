@@ -110,9 +110,18 @@ void main() {
   }
 
   group('defaults', () {
-    test('NEC1 subdevice defaults to 255-D, NECx2 to D', () {
+    test('subdevice defaults to 255-D for NEC and NECx (IrpProtocols)', () {
       expect(const Nec1().normalize({'D': 4, 'F': 8})['S'], 251);
-      expect(const NecX2().normalize({'D': 7, 'F': 2})['S'], 7);
+      expect(const NecX2().normalize({'D': 7, 'F': 2})['S'], 248);
+      expect(const NecX2().normalize({'D': 7, 'S': 7, 'F': 2})['S'], 7);
+    });
+
+    test('NECx1 repeat carries the complement of device bit 0', () {
+      final odd = const NecX1().encode({'D': 7, 'S': 7, 'F': 2});
+      final even = const NecX1().encode({'D': 6, 'S': 6, 'F': 2});
+      // ~D:1 is 0 for odd D (short space) and 1 for even D (long space).
+      expect(odd.repeat!.frameUs[3], 564);
+      expect(even.repeat!.frameUs[3], 1692);
     });
 
     test('toggle defaults to 0 and the toggle bit changes the frame', () {
@@ -189,7 +198,11 @@ void main() {
   group('registry', () {
     test('looks up aliases case-insensitively', () {
       expect(ProtocolRegistry.standard.lookup('samsung32')!.id, 'NECx2');
-      expect(ProtocolRegistry.standard.lookup('NECext')!.id, 'NEC1');
+      expect(ProtocolRegistry.standard.lookup('NEC')!.id, 'NEC1');
+      // Different protocols, never aliases: NEC42 (42-bit) and RC5x (RC5
+      // with an extra 6-bit field).
+      expect(ProtocolRegistry.standard.lookup('NEC42'), isNull);
+      expect(ProtocolRegistry.standard.lookup('RC5x'), isNull);
       expect(ProtocolRegistry.standard.lookup('sirc')!.id, 'Sony12');
       expect(ProtocolRegistry.standard.lookup('rc-5')!.id, 'RC5');
       expect(ProtocolRegistry.standard.lookup('nope'), isNull);

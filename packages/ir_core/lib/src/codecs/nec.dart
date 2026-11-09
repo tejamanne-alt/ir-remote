@@ -14,10 +14,15 @@
 ///   NEC1  {38.4k,564}<1,-1|1,-3>(16,-8,D:8,S:8,F:8,~F:8,1,^108m,(16,-4,1,^108m)*)
 ///   NEC1-f16 {38.4k,564}<1,-1|1,-3>(16,-8,D:8,S:8,F:16,1,^108m,(16,-4,1,^108m)*)
 ///   NEC2  {38.4k,564}<1,-1|1,-3>(16,-8,D:8,S:8,F:8,~F:8,1,^108m)+
-///   NECx1 {38.4k,564}<1,-1|1,-3>(8,-8,D:8,S:8,F:8,~F:8,1,^108m,(8,-8,D:1,1,^108m)*)
 ///   NECx2 {38.4k,564}<1,-1|1,-3>(8,-8,D:8,S:8,F:8,~F:8,1,^108m)+
-///   with S defaulting to 255-D for NEC and to D for NECx. NECx2 is the
-///   protocol Samsung TVs use, called "Samsung32" by Flipper.
+/// - IrpTransmogrifier protocol list (IRP notation only), IrpProtocols.xml,
+///   https://github.com/bengtmartensson/IrpTransmogrifier, checked
+///   2026-11-09, the maintained successor of DecodeIR. It gives the NECx1
+///   repeat as (8,-8,~D:1,1,^108m)* (complemented device bit) and S
+///   defaulting to 255-D for every variant, NEC and NECx alike.
+///
+/// NECx2 is the protocol Samsung TVs use (Flipper calls it "Samsung32");
+/// Samsung codes carry S explicitly (S = D).
 library;
 
 import '../signal/ir_signal.dart';
@@ -58,7 +63,7 @@ abstract base class _NecBase extends IrProtocol {
       'S',
       bits: 8,
       label: 'Subdevice',
-      defaultOf: header == _Header.nec ? (p) => 255 - p['D']! : (p) => p['D']!,
+      defaultOf: (p) => 255 - p['D']!,
     ),
     ParamSpec('F', bits: f16 ? 16 : 8, label: 'Function'),
   ];
@@ -93,7 +98,7 @@ abstract base class _NecBase extends IrProtocol {
         final b = FrameBuilder()
           ..mark(8 * _unit)
           ..space(8 * _unit);
-        _coding.write(b, p['D']! & 1, 1);
+        _coding.write(b, (p['D']! & 1) ^ 1, 1); // ~D:1
         b.mark(_unit);
         repeatFrame = b.build().frame;
       case _Repeat.fullFrame:
@@ -180,7 +185,7 @@ final class Nec1 extends _NecBase {
   String get id => 'NEC1';
 
   @override
-  List<String> get aliases => const ['NEC', 'NECext', 'NEC-ext', 'NEC42'];
+  List<String> get aliases => const ['NEC'];
 }
 
 /// NEC1-f16: NEC1 with a 16-bit function and no inverted check byte.
