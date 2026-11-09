@@ -11,6 +11,8 @@ environment:
 resolution: workspace
 
 dependencies:
+  crypto: ^3.0.8
+  sqlite3: ^3.9.1
   ir_core:
     path: ../ir_core
 

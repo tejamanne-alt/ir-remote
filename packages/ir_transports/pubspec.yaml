@@ -11,6 +11,7 @@ environment:
 resolution: workspace
 
 dependencies:
+  pointycastle: ^4.0.0
   ir_core:
     path: ../ir_core
 
