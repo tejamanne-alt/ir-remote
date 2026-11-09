@@ -139,5 +139,13 @@ void main() {
       renderTable({'b': 'MIT', 'a': 'ISC'}, {'a'}),
       contains('| `a` | ISC | direct |'),
     );
+    expect(
+      renderTable(
+        {'dbus': 'MPL-2.0'},
+        const {},
+        uses: {'dbus': 'not shipped (Linux)'},
+      ),
+      contains('| `dbus` | MPL-2.0 | not shipped (Linux) |'),
+    );
   });
 }

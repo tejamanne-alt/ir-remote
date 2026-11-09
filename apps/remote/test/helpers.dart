@@ -10,6 +10,7 @@ import 'package:irremote/app.dart';
 import 'package:irremote/data/database.dart';
 import 'package:irremote/services/app_services.dart';
 import 'package:irremote/services/code_library.dart';
+import 'package:irremote/services/file_io.dart';
 import 'package:irremote/services/hub_service.dart';
 import 'package:irremote/transports/android_consumer_ir.dart';
 
@@ -28,12 +29,12 @@ CodeSet _necx2(String id, String brand, int d, {int rank = 0}) => CodeSet(
   provenance: testProvenance,
   rank: rank,
   keys: {
-    Keys.power: ProtocolKeyCode('NECx2', {'D': d, 'F': 2}),
-    Keys.volUp: ProtocolKeyCode('NECx2', {'D': d, 'F': 7}),
-    Keys.volDown: ProtocolKeyCode('NECx2', {'D': d, 'F': 11}),
-    Keys.mute: ProtocolKeyCode('NECx2', {'D': d, 'F': 15}),
-    Keys.ok: ProtocolKeyCode('NECx2', {'D': d, 'F': 104}),
-    Keys.digit1: ProtocolKeyCode('NECx2', {'D': d, 'F': 4}),
+    Keys.power: ProtocolKeyCode('NECx2', {'D': d, 'S': d, 'F': 2}),
+    Keys.volUp: ProtocolKeyCode('NECx2', {'D': d, 'S': d, 'F': 7}),
+    Keys.volDown: ProtocolKeyCode('NECx2', {'D': d, 'S': d, 'F': 11}),
+    Keys.mute: ProtocolKeyCode('NECx2', {'D': d, 'S': d, 'F': 15}),
+    Keys.ok: ProtocolKeyCode('NECx2', {'D': d, 'S': d, 'F': 104}),
+    Keys.digit1: ProtocolKeyCode('NECx2', {'D': d, 'S': d, 'F': 4}),
   },
 );
 
@@ -76,6 +77,19 @@ InMemoryCodeLibrary testLibrary() => InMemoryCodeLibrary(
   ],
 );
 
+final class FakeFileIo implements FileIo {
+  String? nextPick;
+  final List<(String, String)> shared = [];
+
+  @override
+  Future<String?> pickText({List<String> extensions = const []}) async =>
+      nextPick;
+
+  @override
+  Future<void> shareText(String name, String text) async =>
+      shared.add((name, text));
+}
+
 final class FakeDiscovery implements BridgeDiscovery {
   // Closed by the test zone; broadcast streams need no listener cleanup.
   // ignore: close_sinks
@@ -97,6 +111,7 @@ Future<(AppServices, SimulatedTransport)> buildServices({
   CodeLibrary? codes,
   BridgeDiscovery? discovery,
   bool withSimulator = true,
+  FileIo? files,
 }) async {
   final sim = SimulatedTransport();
   final services = await AppServices.create(
@@ -106,6 +121,7 @@ Future<(AppServices, SimulatedTransport)> buildServices({
     platform: platform,
     discovery: discovery ?? FakeDiscovery(),
     extraTransports: [if (withSimulator) sim],
+    files: files ?? FakeFileIo(),
   );
   return (services, sim);
 }

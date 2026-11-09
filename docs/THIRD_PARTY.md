@@ -70,6 +70,7 @@ LGPL-2.1: it is linked only into the bridge firmware, never into the app
 | `collection` | BSD-3-Clause | transitive or dev |
 | `convert` | BSD-3-Clause | transitive or dev |
 | `coverage` | BSD-3-Clause | transitive or dev |
+| `cross_file` | BSD-3-Clause | transitive or dev |
 | `crypto` | BSD-3-Clause | direct |
 | `dart_style` | BSD-3-Clause | transitive or dev |
 | `dbus` | MPL-2.0 | not shipped (Linux desktop only, via bonsoir_linux); OPEN_QUESTIONS Q4 |
@@ -78,18 +79,29 @@ LGPL-2.1: it is linked only into the bridge firmware, never into the app
 | `drift_flutter` | MIT | direct |
 | `fake_async` | Apache-2.0 | transitive or dev |
 | `ffi` | BSD-3-Clause | transitive or dev |
+| `ffi_leak_tracker` | BSD-3-Clause | transitive or dev |
 | `file` | BSD-3-Clause | transitive or dev |
+| `file_selector` | BSD-3-Clause | direct |
+| `file_selector_android` | Apache-2.0 | transitive or dev |
+| `file_selector_ios` | BSD-3-Clause | transitive or dev |
+| `file_selector_linux` | BSD-3-Clause | transitive or dev |
+| `file_selector_macos` | BSD-3-Clause | transitive or dev |
+| `file_selector_platform_interface` | BSD-3-Clause | transitive or dev |
+| `file_selector_web` | BSD-3-Clause | transitive or dev |
+| `file_selector_windows` | BSD-3-Clause | transitive or dev |
 | `fixnum` | BSD-3-Clause | transitive or dev |
 | `flutter` | BSD-3-Clause | direct |
 | `flutter_driver` | BSD-3-Clause | transitive or dev |
 | `flutter_lints` | BSD-3-Clause | transitive or dev |
 | `flutter_localizations` | BSD-3-Clause | direct |
 | `flutter_test` | BSD-3-Clause | transitive or dev |
+| `flutter_web_plugins` | BSD-3-Clause | transitive or dev |
 | `frontend_server_client` | BSD-3-Clause | transitive or dev |
 | `fuchsia_remote_debug_protocol` | BSD-3-Clause | transitive or dev |
 | `glob` | BSD-3-Clause | transitive or dev |
 | `graphs` | BSD-3-Clause | transitive or dev |
 | `hooks` | BSD-3-Clause | transitive or dev |
+| `http` | BSD-3-Clause | transitive or dev |
 | `http_multi_server` | BSD-3-Clause | transitive or dev |
 | `http_parser` | BSD-3-Clause | transitive or dev |
 | `integration_test` | BSD-3-Clause | transitive or dev |
@@ -129,6 +141,8 @@ LGPL-2.1: it is linked only into the bridge firmware, never into the app
 | `pubspec_parse` | BSD-3-Clause | transitive or dev |
 | `recase` | BSD-2-Clause | transitive or dev |
 | `record_use` | BSD-3-Clause | transitive or dev |
+| `share_plus` | BSD-3-Clause | direct |
+| `share_plus_platform_interface` | BSD-3-Clause | transitive or dev |
 | `shelf` | BSD-3-Clause | transitive or dev |
 | `shelf_packages_handler` | BSD-3-Clause | transitive or dev |
 | `shelf_static` | BSD-3-Clause | transitive or dev |
@@ -152,6 +166,11 @@ LGPL-2.1: it is linked only into the bridge firmware, never into the app
 | `test_api` | BSD-3-Clause | transitive or dev |
 | `test_core` | BSD-3-Clause | transitive or dev |
 | `typed_data` | BSD-3-Clause | transitive or dev |
+| `url_launcher_linux` | BSD-3-Clause | transitive or dev |
+| `url_launcher_platform_interface` | BSD-3-Clause | transitive or dev |
+| `url_launcher_web` | BSD-3-Clause | transitive or dev |
+| `url_launcher_windows` | BSD-3-Clause | transitive or dev |
+| `uuid` | MIT | transitive or dev |
 | `vector_math` | BSD-3-Clause | transitive or dev |
 | `vm_service` | BSD-3-Clause | transitive or dev |
 | `watcher` | BSD-3-Clause | transitive or dev |
@@ -160,6 +179,7 @@ LGPL-2.1: it is linked only into the bridge firmware, never into the app
 | `web_socket_channel` | BSD-3-Clause | transitive or dev |
 | `webdriver` | Apache-2.0 | transitive or dev |
 | `webkit_inspection_protocol` | BSD-3-Clause | transitive or dev |
+| `win32` | BSD-3-Clause | transitive or dev |
 | `xdg_directories` | BSD-3-Clause | transitive or dev |
 | `xml` | MIT | transitive or dev |
 | `yaml` | MIT | transitive or dev |

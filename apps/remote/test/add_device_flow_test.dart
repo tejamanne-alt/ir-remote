@@ -32,7 +32,10 @@ void main() {
 
     await tester.tap(find.text('Send Power'));
     await settle(tester);
-    expect(sim.sent.last.signal, const NecX2().encode({'D': 7, 'F': 2}));
+    expect(
+      sim.sent.last.signal,
+      const NecX2().encode({'D': 7, 'S': 7, 'F': 2}),
+    );
     expect(find.text('Did it respond?'), findsOneWidget);
     expect(find.textContaining('counts as a response'), findsOneWidget);
 
@@ -42,7 +45,10 @@ void main() {
     expect(find.text('Set 2 of 2'), findsOneWidget);
     await tester.tap(find.text('Send Power'));
     await settle(tester);
-    expect(sim.sent.last.signal, const NecX2().encode({'D': 5, 'F': 2}));
+    expect(
+      sim.sent.last.signal,
+      const NecX2().encode({'D': 5, 'S': 5, 'F': 2}),
+    );
     await tester.tap(find.text('Yes'));
     await settle(tester);
 
@@ -50,7 +56,10 @@ void main() {
     expect(find.text('Now try Volume up. Did it respond too?'), findsOneWidget);
     await tester.tap(find.text('Send Volume up'));
     await settle(tester);
-    expect(sim.sent.last.signal, const NecX2().encode({'D': 5, 'F': 7}));
+    expect(
+      sim.sent.last.signal,
+      const NecX2().encode({'D': 5, 'S': 5, 'F': 7}),
+    );
     await tester.tap(find.text('Yes'));
     await settle(tester);
 
@@ -65,7 +74,10 @@ void main() {
     await tester.tap(find.bySemanticsLabel('Mute').first);
     await settle(tester);
     expect(sim.sent.length, before + 1);
-    expect(sim.sent.last.signal, const NecX2().encode({'D': 5, 'F': 15}));
+    expect(
+      sim.sent.last.signal,
+      const NecX2().encode({'D': 5, 'S': 5, 'F': 15}),
+    );
 
     final saved = await tester.runAsync(
       () => services.devices.watchDevices().first,

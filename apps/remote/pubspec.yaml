@@ -18,12 +18,14 @@ dependencies:
     path: ../../packages/code_db
   drift: '>=2.20.0 <3.0.0'
   drift_flutter: ^0.3.1
+  file_selector: ^1.1.0
   intl: any
   ir_core:
     path: ../../packages/ir_core
   ir_transports:
     path: ../../packages/ir_transports
   path_provider: ^2.1.6
+  share_plus: ^13.3.1
 
 dev_dependencies:
   build_runner: '>=2.4.0 <3.0.0'

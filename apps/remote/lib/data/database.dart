@@ -8,6 +8,8 @@ library;
 
 import 'package:drift/drift.dart';
 
+import 'database.steps.dart';
+
 part 'database.g.dart';
 
 /// Rooms group remotes on the home screen.
@@ -117,18 +119,36 @@ class Settings extends Table {
   Set<Column> get primaryKey => {key};
 }
 
+/// A macro: ordered commands with delays (schema v2).
+@DataClassName('MacroRow')
+class Macros extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text().withLength(min: 1, max: 40)();
+
+  /// JSON list of steps: `{"deviceId", "key", "delayMs"}`.
+  TextColumn get steps => text()();
+  IntColumn get sortOrder => integer().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// The user-data database.
-@DriftDatabase(tables: [Rooms, Devices, DeviceKeys, Hubs, Settings])
+@DriftDatabase(tables: [Rooms, Devices, DeviceKeys, Hubs, Settings, Macros])
 class AppDatabase extends _$AppDatabase {
   /// Opens the database on [executor].
   AppDatabase(super.executor);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
+    onUpgrade: stepByStep(
+      from1To2: (m, schema) async => m.createTable(schema.macros),
+    ),
     beforeOpen: (details) async {
       await customStatement('PRAGMA foreign_keys = ON');
     },

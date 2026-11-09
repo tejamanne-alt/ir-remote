@@ -900,4 +900,101 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get genericDeviceName => 'My remote';
+
+  @override
+  String get menuMacros => 'Macros';
+
+  @override
+  String get macrosTitle => 'Macros';
+
+  @override
+  String get macrosEmpty =>
+      'No macros yet. A macro sends several buttons in order, for example \"TV on, then set-top box on\".';
+
+  @override
+  String get macroNew => 'New macro';
+
+  @override
+  String get macroEdit => 'Edit macro';
+
+  @override
+  String get macroName => 'Macro name';
+
+  @override
+  String macroStepCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count steps',
+      one: '1 step',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get macroRun => 'Run';
+
+  @override
+  String get macroAddStep => 'Add step';
+
+  @override
+  String get macroDevice => 'Remote';
+
+  @override
+  String get macroKey => 'Button';
+
+  @override
+  String get macroDelay => 'Then wait';
+
+  @override
+  String macroDelaySeconds(String seconds) {
+    return '$seconds s';
+  }
+
+  @override
+  String get macroStarting => 'Starting…';
+
+  @override
+  String macroProgress(int current, int total) {
+    return 'Step $current of $total';
+  }
+
+  @override
+  String get macroDone => 'Done.';
+
+  @override
+  String get macroCancelled => 'Cancelled. Later steps were not sent.';
+
+  @override
+  String macroMissingDevice(int step) {
+    return 'Stopped at step $step: its remote was deleted.';
+  }
+
+  @override
+  String macroFailed(int step, String detail) {
+    return 'Stopped at step $step: $detail';
+  }
+
+  @override
+  String get backupBody =>
+      'A backup file holds your remotes, rooms, hubs, macros and settings. Hub pairings are not included; pair hubs again after restoring.';
+
+  @override
+  String get backupExport => 'Export a backup';
+
+  @override
+  String get backupExported => 'Backup ready to save or share.';
+
+  @override
+  String get backupRestore => 'Restore from a backup';
+
+  @override
+  String get backupRestoreConfirmTitle => 'Replace everything?';
+
+  @override
+  String get backupRestoreConfirmBody =>
+      'Restoring replaces all remotes, rooms, hubs, macros and settings on this phone with the backup.';
+
+  @override
+  String get backupRestored => 'Restored.';
 }

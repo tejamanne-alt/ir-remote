@@ -9,6 +9,7 @@ import '../../services/app_services.dart';
 import '../add_device/add_device_flow.dart';
 import '../hubs/hubs_screen.dart';
 import '../labels.dart';
+import '../macros/macros_screen.dart';
 import '../remote/remote_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -25,6 +26,13 @@ class HomeScreen extends StatelessWidget {
       appBar: AppBar(
         title: Text(l.homeTitle),
         actions: [
+          IconButton(
+            tooltip: l.menuMacros,
+            icon: const Icon(Icons.playlist_play),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const MacrosScreen()),
+            ),
+          ),
           IconButton(
             tooltip: l.menuHubs,
             icon: const Icon(Icons.router_outlined),

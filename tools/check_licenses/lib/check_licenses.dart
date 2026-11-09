@@ -224,9 +224,9 @@ String renderTable(
     ..writeln('| Package | License | Use |')
     ..writeln('| --- | --- | --- |');
   for (final n in names) {
-    b.writeln(
-      '| `$n` | ${resolved[n]} | ${direct.contains(n) ? 'direct' : 'transitive or dev'} |',
-    );
+    final use =
+        uses[n] ?? (direct.contains(n) ? 'direct' : 'transitive or dev');
+    b.writeln('| `$n` | ${resolved[n]} | $use |');
   }
   return b.toString();
 }

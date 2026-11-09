@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import '../ac/ac_panel.dart';
 import '../labels.dart';
+import '../learn/flipper_import.dart';
 import '../learn/learn_screen.dart';
 import '../learn/pronto_dialog.dart';
 import '../widgets/remote_button.dart';
@@ -353,7 +354,15 @@ class _NumberPad extends StatelessWidget {
   }
 }
 
-enum _MenuAction { favourite, rename, transport, learn, pronto, delete }
+enum _MenuAction {
+  favourite,
+  rename,
+  transport,
+  learn,
+  pronto,
+  flipper,
+  delete,
+}
 
 class _DeviceMenu extends StatelessWidget {
   const _DeviceMenu({required this.device});
@@ -473,6 +482,8 @@ class _DeviceMenu extends StatelessWidget {
             );
           case _MenuAction.pronto:
             await addProntoKey(context, device);
+          case _MenuAction.flipper:
+            await importFlipperInto(context, device.id);
           case _MenuAction.delete:
             await _delete(context);
         }
@@ -496,6 +507,10 @@ class _DeviceMenu extends StatelessWidget {
         PopupMenuItem(
           value: _MenuAction.pronto,
           child: Text(l.deviceMenuPronto),
+        ),
+        PopupMenuItem(
+          value: _MenuAction.flipper,
+          child: Text(l.optionImportFlipper),
         ),
         PopupMenuItem(
           value: _MenuAction.delete,

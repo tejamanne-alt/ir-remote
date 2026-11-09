@@ -8,11 +8,14 @@ import 'package:ir_core/ir_core.dart';
 import 'package:ir_transports/ir_transports.dart';
 
 import '../data/database.dart';
+import '../data/macros.dart';
 import '../data/repositories.dart';
 import '../transports/android_consumer_ir.dart';
 import 'app_settings.dart';
 import 'code_library.dart';
+import 'file_io.dart';
 import 'hub_service.dart';
+import 'macro_runner.dart';
 import 'send_service.dart';
 import 'signal_log.dart';
 
@@ -29,7 +32,9 @@ final class AppServices {
     required this.log,
     required this.emitter,
     required this.platform,
-  });
+    required this.files,
+  }) : macros = MacroRepository(db),
+       macroRunner = MacroRunner(send: send, devices: devices);
 
   /// Builds services around [db]. [codes] is the read-only code library.
   static Future<AppServices> create({
@@ -40,6 +45,7 @@ final class AppServices {
     BridgeDiscovery? discovery,
     HubTransportFactory? hubFactory,
     List<IrTransport> extraTransports = const [],
+    FileIo files = const PlatformFileIo(),
   }) async {
     final log = SignalLog();
     final registry = TransportRegistry(onRecord: kDebugMode ? log.add : null);
@@ -83,6 +89,7 @@ final class AppServices {
       log: log,
       emitter: info,
       platform: p,
+      files: files,
     );
   }
 
@@ -115,6 +122,24 @@ final class AppServices {
 
   /// Platform the app runs on.
   final TargetPlatform platform;
+
+  /// File picking and sharing.
+  final FileIo files;
+
+  /// Macros.
+  final MacroRepository macros;
+
+  /// Runs macros.
+  final MacroRunner macroRunner;
+
+  /// Refreshes cached state after a backup restore.
+  Future<void> reloadAfterRestore() async {
+    await settings.reload();
+    for (final t in registry.hubs.toList()) {
+      await registry.unregister(t.id);
+    }
+    await hubs.loadAll();
+  }
 
   /// Whether this is an iPhone/iPad (hubs only).
   bool get isIos => platform == TargetPlatform.iOS;

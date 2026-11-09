@@ -9,6 +9,7 @@ import 'package:ir_transports/ir_transports.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import '../../services/app_settings.dart';
+import '../backup/backup_screen.dart';
 
 /// App version shown on About (kept in sync with pubspec by the release
 /// checklist).
@@ -72,6 +73,11 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               const Divider(height: 32),
+              ListTile(
+                leading: const Icon(Icons.backup_outlined),
+                title: Text(l.settingsBackup),
+                onTap: () => _push(context, const BackupScreen()),
+              ),
               ListTile(
                 leading: const Icon(Icons.info_outline),
                 title: Text(l.settingsAbout),

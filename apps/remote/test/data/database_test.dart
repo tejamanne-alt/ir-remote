@@ -1,9 +1,4 @@
-// Repository round trips and schema migration tests.
-//
-// The migration test walks every schema version in drift_schemas/ forward
-// to the current one, so adding a version automatically adds its tests
-// (regenerate helpers with `dart run drift_dev make-migrations`).
-import 'package:drift_dev/api/migrations_native.dart';
+// Repository round trips. Migrations are in migration_test.dart.
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ir_core/ir_core.dart';
 import 'package:irremote/data/database.dart';
@@ -11,26 +6,8 @@ import 'package:irremote/data/models.dart';
 import 'package:irremote/data/repositories.dart';
 
 import '../helpers.dart';
-import 'generated/schema.dart';
 
 void main() {
-  group('migrations', () {
-    late SchemaVerifier verifier;
-    setUpAll(() => verifier = SchemaVerifier(GeneratedHelper()));
-
-    test('every earlier schema migrates forward to the current one', () async {
-      final probe = memoryDb();
-      final current = probe.schemaVersion;
-      await probe.close();
-      for (var from = 1; from <= current; from++) {
-        final schema = await verifier.schemaAt(from);
-        final db = AppDatabase(schema.newConnection());
-        await verifier.migrateAndValidate(db, current);
-        await db.close();
-      }
-    });
-  });
-
   group('repositories', () {
     late AppDatabase db;
     late DeviceRepository devices;

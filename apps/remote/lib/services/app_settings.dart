@@ -49,6 +49,17 @@ final class AppSettings extends ChangeNotifier {
   late bool _useSimulator;
   late bool _showUnverifiedAc;
 
+  /// Re-reads every setting (after a restore) and notifies listeners.
+  Future<void> reload() async {
+    final fresh = AppSettings._(_repo, await _repo.all());
+    _themeMode = fresh._themeMode;
+    _unit = fresh._unit;
+    _onboardingDone = fresh._onboardingDone;
+    _useSimulator = fresh._useSimulator;
+    _showUnverifiedAc = fresh._showUnverifiedAc;
+    notifyListeners();
+  }
+
   /// The backing repository (tests reload settings through it).
   @visibleForTesting
   SettingsRepository get repoForTest => _repo;

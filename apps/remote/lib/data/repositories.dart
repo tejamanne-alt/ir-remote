@@ -128,11 +128,12 @@ final class DeviceRepository {
     return _fromRow(row, keys);
   }
 
-  /// Watches one remote with its keys.
-  Stream<SavedDevice?> watch(String id) {
-    final q = db.select(db.devices)..where((d) => d.id.equals(id));
-    return q.watchSingleOrNull().asyncMap((_) => load(id));
-  }
+  /// Watches one remote with its keys. Re-emits when the remote or any of
+  /// its keys change (learning, imports, renames).
+  Stream<SavedDevice?> watch(String id) => db
+      .customSelect('SELECT 1', readsFrom: {db.devices, db.deviceKeys})
+      .watch()
+      .asyncMap((_) => load(id));
 
   /// Inserts or replaces a remote and all of its keys in one transaction.
   Future<void> save(SavedDevice d) => db.transaction(() async {

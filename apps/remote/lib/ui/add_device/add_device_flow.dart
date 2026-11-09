@@ -9,6 +9,7 @@ import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import '../../services/code_library.dart';
 import '../labels.dart';
+import '../learn/flipper_import.dart';
 import '../learn/learn_screen.dart';
 import '../learn/pronto_dialog.dart';
 import '../remote/remote_screen.dart';
@@ -393,6 +394,29 @@ class _AllFailed extends StatelessWidget {
               await nav.push(
                 MaterialPageRoute<void>(
                   builder: (_) => LearnScreen(deviceId: d.id),
+                ),
+              );
+            },
+          ),
+        ),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.file_open_outlined),
+            title: Text(l.optionImportFlipper),
+            onTap: () async {
+              final nav = Navigator.of(context);
+              final d = await _createEmpty(context);
+              if (!context.mounted) return;
+              final n = await importFlipperInto(context, d.id);
+              if (n == null || n == 0) {
+                if (context.mounted) {
+                  await AppScope.of(context).devices.delete(d.id);
+                }
+                return;
+              }
+              nav.pushReplacement(
+                MaterialPageRoute<void>(
+                  builder: (_) => RemoteScreen(deviceId: d.id),
                 ),
               );
             },

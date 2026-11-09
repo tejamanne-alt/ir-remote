@@ -1683,6 +1683,162 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'My remote'**
   String get genericDeviceName;
+
+  /// No description provided for @menuMacros.
+  ///
+  /// In en, this message translates to:
+  /// **'Macros'**
+  String get menuMacros;
+
+  /// No description provided for @macrosTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Macros'**
+  String get macrosTitle;
+
+  /// No description provided for @macrosEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No macros yet. A macro sends several buttons in order, for example \"TV on, then set-top box on\".'**
+  String get macrosEmpty;
+
+  /// No description provided for @macroNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New macro'**
+  String get macroNew;
+
+  /// No description provided for @macroEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit macro'**
+  String get macroEdit;
+
+  /// No description provided for @macroName.
+  ///
+  /// In en, this message translates to:
+  /// **'Macro name'**
+  String get macroName;
+
+  /// No description provided for @macroStepCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 step} other{{count} steps}}'**
+  String macroStepCount(int count);
+
+  /// No description provided for @macroRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Run'**
+  String get macroRun;
+
+  /// No description provided for @macroAddStep.
+  ///
+  /// In en, this message translates to:
+  /// **'Add step'**
+  String get macroAddStep;
+
+  /// No description provided for @macroDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote'**
+  String get macroDevice;
+
+  /// No description provided for @macroKey.
+  ///
+  /// In en, this message translates to:
+  /// **'Button'**
+  String get macroKey;
+
+  /// No description provided for @macroDelay.
+  ///
+  /// In en, this message translates to:
+  /// **'Then wait'**
+  String get macroDelay;
+
+  /// No description provided for @macroDelaySeconds.
+  ///
+  /// In en, this message translates to:
+  /// **'{seconds} s'**
+  String macroDelaySeconds(String seconds);
+
+  /// No description provided for @macroStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting…'**
+  String get macroStarting;
+
+  /// No description provided for @macroProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {current} of {total}'**
+  String macroProgress(int current, int total);
+
+  /// No description provided for @macroDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done.'**
+  String get macroDone;
+
+  /// No description provided for @macroCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled. Later steps were not sent.'**
+  String get macroCancelled;
+
+  /// No description provided for @macroMissingDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped at step {step}: its remote was deleted.'**
+  String macroMissingDevice(int step);
+
+  /// No description provided for @macroFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped at step {step}: {detail}'**
+  String macroFailed(int step, String detail);
+
+  /// No description provided for @backupBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A backup file holds your remotes, rooms, hubs, macros and settings. Hub pairings are not included; pair hubs again after restoring.'**
+  String get backupBody;
+
+  /// No description provided for @backupExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export a backup'**
+  String get backupExport;
+
+  /// No description provided for @backupExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Backup ready to save or share.'**
+  String get backupExported;
+
+  /// No description provided for @backupRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore from a backup'**
+  String get backupRestore;
+
+  /// No description provided for @backupRestoreConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace everything?'**
+  String get backupRestoreConfirmTitle;
+
+  /// No description provided for @backupRestoreConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Restoring replaces all remotes, rooms, hubs, macros and settings on this phone with the backup.'**
+  String get backupRestoreConfirmBody;
+
+  /// No description provided for @backupRestored.
+  ///
+  /// In en, this message translates to:
+  /// **'Restored.'**
+  String get backupRestored;
 }
 
 class _AppLocalizationsDelegate
