@@ -188,16 +188,25 @@ final class Healthy extends HealthStatus {
   bool get isUsable => true;
 }
 
-/// The transport works but something needs attention.
+/// The transport answers but something needs attention.
 final class Degraded extends HealthStatus {
-  /// Creates a degraded status.
-  const Degraded({required super.checkedAt, required this.reason});
+  /// Creates a degraded status. [canSend] is false when the transport
+  /// answers but cannot transmit until the user acts (for example a hub
+  /// that is not paired), so automatic selection skips it.
+  const Degraded({
+    required super.checkedAt,
+    required this.reason,
+    this.canSend = true,
+  });
 
   /// What needs attention.
   final String reason;
 
+  /// Whether the transport can still transmit.
+  final bool canSend;
+
   @override
-  bool get isUsable => true;
+  bool get isUsable => canSend;
 }
 
 /// The transport cannot be used.

@@ -176,7 +176,15 @@ final class EspBridgeTransport implements IrTransport {
   TransportKind get kind => TransportKind.espBridge;
 
   final HttpClient _http = HttpClient();
-  DateTime _quietUntil = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Monotonic clock for inter-chunk quiet time (wall-clock changes must not
+  /// stall or skip a gap).
+  final Stopwatch _clock = Stopwatch()..start();
+  int _quietUntilUs = 0;
+  bool _disposed = false;
+
+  /// Stop functions of learn sessions still open, so [dispose] can end them.
+  final Set<Future<void> Function({bool remote})> _activeLearns = {};
 
   /// Reads `GET /v1/info` and adopts the bridge's capabilities.
   Future<BridgeInfo> fetchInfo() async {
@@ -215,29 +223,46 @@ final class EspBridgeTransport implements IrTransport {
 
   @override
   Future<TransmitResult> transmit(IrSignal signal, {int repeats = 0}) async {
-    final stopwatch = Stopwatch()..start();
-    final issues = validator.validate(signal, caps);
-    if (issues.isNotEmpty) {
-      return TransmitRejected(issues.first.reason, issues.first.detail);
-    }
-    if (token == null) {
+    if (_disposed) return const TransmitTransportUnavailable(_closedMessage);
+    if (repeats < 0) {
       return const TransmitRejected(
-        RejectReason.refusedByHub,
-        'this hub is not paired yet; press its button and pair again',
+        RejectReason.invalidDurations,
+        'repeat count must not be negative',
       );
     }
-    final chunks = validator.plan(signal, caps, repeats: repeats);
-    for (final chunk in chunks) {
-      final wait = _quietUntil.difference(DateTime.now());
-      if (wait > Duration.zero) await Future<void>.delayed(wait);
-      final r = await _sendChunk(chunk);
-      _quietUntil = DateTime.now().add(
-        Duration(microseconds: chunk.gapAfterUs),
-      );
-      if (r != null) return r;
+    try {
+      final stopwatch = Stopwatch()..start();
+      final issues = validator.validate(signal, caps);
+      if (issues.isNotEmpty) {
+        return TransmitRejected(issues.first.reason, issues.first.detail);
+      }
+      if (token == null) {
+        return const TransmitRejected(
+          RejectReason.refusedByHub,
+          'this hub is not paired yet; press its button and pair again',
+        );
+      }
+      final chunks = validator.plan(signal, caps, repeats: repeats);
+      for (final chunk in chunks) {
+        final waitUs = _quietUntilUs - _clock.elapsedMicroseconds;
+        if (waitUs > 0) {
+          await Future<void>.delayed(Duration(microseconds: waitUs));
+        }
+        if (_disposed) {
+          return const TransmitTransportUnavailable(_closedMessage);
+        }
+        final r = await _sendChunk(chunk);
+        _quietUntilUs = _clock.elapsedMicroseconds + chunk.gapAfterUs;
+        if (r != null) return r;
+      }
+      return TransmitSent(elapsed: stopwatch.elapsed);
+    } on Object catch (e) {
+      // Transports never throw (for example the client closed mid-send).
+      return TransmitTransportUnavailable(_describe(e));
     }
-    return TransmitSent(elapsed: stopwatch.elapsed);
   }
+
+  static const String _closedMessage = 'hub connection was closed';
 
   /// Sends one chunk; returns `null` on success or the failure result.
   Future<TransmitResult?> _sendChunk(TransmitChunk chunk) async {
@@ -303,13 +328,18 @@ final class EspBridgeTransport implements IrTransport {
 
   @override
   Future<HealthStatus> health() async {
+    if (_disposed) {
+      return Unreachable(checkedAt: DateTime.now(), reason: _closedMessage);
+    }
     final stopwatch = Stopwatch()..start();
     try {
       if (token == null) {
         await _request('GET', '/v1/info', auth: false);
+        // Reachable, but it cannot send for us, so selection must skip it.
         return Degraded(
           checkedAt: DateTime.now(),
           reason: 'reachable but not paired',
+          canSend: false,
         );
       }
       final body = await _request('GET', '/v1/health');
@@ -329,6 +359,7 @@ final class EspBridgeTransport implements IrTransport {
         return Degraded(
           checkedAt: DateTime.now(),
           reason: 'pairing was cleared on the hub',
+          canSend: false,
         );
       }
       return Degraded(checkedAt: DateTime.now(), reason: e.detail);
@@ -349,34 +380,60 @@ final class EspBridgeTransport implements IrTransport {
     StreamSubscription<Object?>? sub;
     var closed = false;
 
+    Future<void> sendStop() async {
+      try {
+        await _request('DELETE', '/v1/learn');
+      } on Object {
+        // best effort: the bridge also times out on its own
+      }
+    }
+
     Future<void> stop({bool remote = true}) async {
       if (closed) return;
       closed = true;
+      _activeLearns.remove(stop);
       await sub?.cancel();
-      await socket?.close();
-      if (remote) {
-        try {
-          await _request('DELETE', '/v1/learn');
-        } on Object {
-          // best effort: the bridge also times out on its own
-        }
+      try {
+        await socket?.close().timeout(requestTimeout);
+      } on Object {
+        // the socket is gone either way
       }
+      if (remote && !_disposed) await sendStop();
       if (!controller.isClosed) await controller.close();
     }
 
     controller = StreamController<LearnedSignal>(
       onListen: () async {
+        _activeLearns.add(stop);
         try {
+          if (_disposed) throw StateError(_closedMessage);
           final wsUri = baseUri.replace(
             scheme: baseUri.scheme == 'https' ? 'wss' : 'ws',
             path: '/v1/ws',
           );
-          socket = await WebSocket.connect(
+          final connecting = WebSocket.connect(
             wsUri.toString(),
             headers: {'Authorization': 'Bearer ${token ?? ''}'},
-          ).timeout(requestTimeout);
-          sub = socket!.listen(
+          );
+          final WebSocket ws;
+          try {
+            ws = await connecting.timeout(requestTimeout);
+          } on TimeoutException {
+            // A socket that connects after the timeout must not stay open.
+            unawaited(
+              connecting.then<void>((late) => late.close(), onError: (_) {}),
+            );
+            rethrow;
+          }
+          if (closed) {
+            // Cancelled (or disposed) while connecting.
+            unawaited(ws.close());
+            return;
+          }
+          socket = ws;
+          sub = ws.listen(
             (msg) {
+              if (closed || controller.isClosed) return;
               if (msg is! String || msg.length > maxBridgeMessageBytes) return;
               final event = _parseWsEvent(msg);
               switch (event) {
@@ -420,6 +477,9 @@ final class EspBridgeTransport implements IrTransport {
             '/v1/learn',
             body: {'timeoutMs': continuous ? 0 : learnTimeout.inMilliseconds},
           );
+          // Cancelled while the start request was in flight: its DELETE may
+          // have reached the bridge first, so stop learn mode again.
+          if (closed && !_disposed) await sendStop();
         } on Object catch (e) {
           // The socket may already have closed the stream (for example a
           // 1008 close right after the upgrade); report only the first error.
@@ -475,8 +535,12 @@ final class EspBridgeTransport implements IrTransport {
     bool auth = true,
     Duration? timeout,
   }) async {
+    // Closed by `run` below, or aborted on timeout.
+    // ignore: close_sinks
+    HttpClientRequest? open;
     Future<Object?> run() async {
       final req = await _http.openUrl(method, baseUri.replace(path: path));
+      open = req;
       req.headers.contentType = ContentType.json;
       if (auth && token != null) {
         req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -510,7 +574,13 @@ final class EspBridgeTransport implements IrTransport {
       return json;
     }
 
-    return run().timeout(timeout ?? requestTimeout);
+    try {
+      return await run().timeout(timeout ?? requestTimeout);
+    } on TimeoutException {
+      // Free the connection instead of leaving the request running.
+      open?.abort();
+      rethrow;
+    }
   }
 
   static String _describe(Object e) => switch (e) {
@@ -519,6 +589,15 @@ final class EspBridgeTransport implements IrTransport {
     _ => 'hub error: $e',
   };
 
+  /// Ends any open learn session and closes the HTTP client. A learn the
+  /// bridge is still running ends on the bridge's own timeout.
   @override
-  Future<void> dispose() async => _http.close(force: true);
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await Future.wait([
+      for (final stop in _activeLearns.toList()) stop(remote: false),
+    ]);
+    _http.close(force: true);
+  }
 }

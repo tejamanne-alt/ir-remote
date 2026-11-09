@@ -113,6 +113,10 @@ final class FakeBroadlinkDevice {
   /// Error code for send-data, or null for success.
   int? sendDataError;
 
+  /// Ack send-data with error 0 but a payload the client cannot decrypt
+  /// (the hub has transmitted; only the reply is garbled).
+  bool garbleSendDataReply = false;
+
   /// The capture check-data returns while learning, after
   /// [pollsBeforeCapture] polls.
   Uint8List? capture;
@@ -298,7 +302,14 @@ final class FakeBroadlinkDevice {
         final irLen = data[2] | (data[3] << 8);
         sentIr.add(Uint8List.fromList(data.sublist(0, 4 + irLen)));
         learning = false; // Any send ends a learning session.
-        _replyCommand(d, frame, sendDataError ?? 0, command!, Uint8List(0));
+        _replyCommand(
+          d,
+          frame,
+          sendDataError ?? 0,
+          command!,
+          Uint8List(0),
+          garble: garbleSendDataReply,
+        );
       case BroadlinkRmCommand.enterLearning:
         learning = true;
         _pollsSinceArm = 0;
@@ -333,8 +344,9 @@ final class FakeBroadlinkDevice {
     BroadlinkFrame request,
     int errorCode,
     int command,
-    Uint8List data,
-  ) {
+    Uint8List data, {
+    bool garble = false,
+  }) {
     final Uint8List plain;
     if (_rm4) {
       plain = Uint8List(6 + data.length);
@@ -356,7 +368,9 @@ final class FakeBroadlinkDevice {
         mac: mac,
         sessionId: _id,
         payload: plain,
-        cipher: BroadlinkCipher(_key),
+        cipher: garble
+            ? BroadlinkCipher(Uint8List.fromList(List.filled(16, 0x5a)))
+            : BroadlinkCipher(_key),
         errorCode: errorCode,
       ),
     );

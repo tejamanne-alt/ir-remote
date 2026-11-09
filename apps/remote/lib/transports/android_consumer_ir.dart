@@ -226,7 +226,10 @@ final class AndroidConsumerIrTransport implements IrTransport {
   @override
   TransportKind get kind => TransportKind.builtIn;
 
-  DateTime _quietUntil = DateTime.fromMillisecondsSinceEpoch(0);
+  /// Monotonic clock for inter-chunk quiet time, so a wall-clock change
+  /// cannot stall the emitter or cut a gap short.
+  final Stopwatch _clock = Stopwatch()..start();
+  int _quietUntilUs = 0;
 
   @override
   Future<TransmitResult> transmit(IrSignal signal, {int repeats = 0}) async {
@@ -234,13 +237,21 @@ final class AndroidConsumerIrTransport implements IrTransport {
     if (!info.canTransmit) {
       return const TransmitTransportUnavailable('this phone has no IR emitter');
     }
+    if (repeats < 0) {
+      return const TransmitRejected(
+        RejectReason.invalidDurations,
+        'repeat count must not be negative',
+      );
+    }
     final issues = validator.validate(signal, caps);
     if (issues.isNotEmpty) {
       return TransmitRejected(issues.first.reason, issues.first.detail);
     }
     for (final chunk in validator.plan(signal, caps, repeats: repeats)) {
-      final wait = _quietUntil.difference(DateTime.now());
-      if (wait > Duration.zero) await Future<void>.delayed(wait);
+      final waitUs = _quietUntilUs - _clock.elapsedMicroseconds;
+      if (waitUs > 0) {
+        await Future<void>.delayed(Duration(microseconds: waitUs));
+      }
       try {
         await channel.invokeMethod<Object?>('transmit', {
           'carrierHz': chunk.carrierHz,
@@ -266,9 +277,7 @@ final class AndroidConsumerIrTransport implements IrTransport {
       } on MissingPluginException {
         return const TransmitTransportUnavailable('IR channel not available');
       }
-      _quietUntil = DateTime.now().add(
-        Duration(microseconds: chunk.gapAfterUs),
-      );
+      _quietUntilUs = _clock.elapsedMicroseconds + chunk.gapAfterUs;
     }
     return TransmitSent(elapsed: sw.elapsed);
   }

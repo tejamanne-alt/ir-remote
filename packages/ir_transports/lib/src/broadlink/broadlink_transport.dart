@@ -349,6 +349,7 @@ final class BroadlinkTransport implements IrTransport {
         BroadlinkRmCommand.sendData,
         data: p.bytes,
         resend: false,
+        ignoreReplyData: true,
         timeout: options.requestTimeout + onAir,
       );
       if (reply.errorCode != 0) {
@@ -662,12 +663,19 @@ final class BroadlinkTransport implements IrTransport {
   /// Sends one RM command and returns the reply's error code and data.
   /// Re-authenticates once when the hub reports a stale session or the
   /// reply cannot be decrypted, then repeats the request.
+  ///
+  /// With [ignoreReplyData] (send-data), a reply with error code 0 counts as
+  /// done even when its payload cannot be read: the hub has most likely
+  /// transmitted, and repeating the request could fire a power toggle twice
+  /// (ADR-012). An unreadable ack still marks the session stale, so the next
+  /// command re-authenticates first; a key change costs at most one press.
   Future<({int errorCode, Uint8List data})> _command(
     int command, {
     List<int> data = const [],
     bool resend = true,
     Duration? timeout,
     bool allowReauth = true,
+    bool ignoreReplyData = false,
   }) async {
     final family = _family;
     if (family == null) {
@@ -700,6 +708,18 @@ final class BroadlinkTransport implements IrTransport {
         continue;
       }
       if (code != 0) return (errorCode: code, data: Uint8List(0));
+      if (ignoreReplyData) {
+        try {
+          // Garbage under a stale key only shows in the RM framing checks.
+          unwrapBroadlinkRmReply(
+            family,
+            session.cipher.decrypt(reply.encryptedPayload),
+          );
+        } on BroadlinkFormatException {
+          _session = null; // re-authenticate before the next command
+        }
+        return (errorCode: 0, data: Uint8List(0));
+      }
       try {
         final plain = session.cipher.decrypt(reply.encryptedPayload);
         return (errorCode: 0, data: unwrapBroadlinkRmReply(family, plain));

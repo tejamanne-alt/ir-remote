@@ -8,16 +8,17 @@ library;
 
 import 'dart:io';
 
-/// Whether [host] is a local-network address: an RFC 1918 or link-local
-/// IPv4 address, an IPv6 link-local or unique-local address, loopback, or a
-/// multicast-DNS `.local` name.
+/// Whether [host] is a local-network address literal: an RFC 1918 or
+/// link-local IPv4 address, an IPv6 link-local or unique-local address, or
+/// loopback.
+///
+/// Names are refused, `.local` included: a name is resolved later by the
+/// system resolver, which may answer with any address (some networks serve
+/// a `.local` zone over unicast DNS). Discovery already yields resolved
+/// addresses and typed hubs are IPv4, so only crafted input carries names.
 bool isLanHost(String host) {
   final h = host.trim().toLowerCase();
   if (h.isEmpty || h.length > 253) return false;
-  if (h.endsWith('.local') &&
-      RegExp(r'^[a-z0-9-]+(\.[a-z0-9-]+)*$').hasMatch(h)) {
-    return true;
-  }
   final addr = InternetAddress.tryParse(h);
   if (addr == null) return false;
   if (addr.isLoopback || addr.isLinkLocal) return true;

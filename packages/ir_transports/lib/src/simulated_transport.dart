@@ -92,6 +92,12 @@ final class SimulatedTransport implements IrTransport {
         nextResult = null;
         return forced;
       }
+      if (repeats < 0) {
+        return const TransmitRejected(
+          RejectReason.invalidDurations,
+          'repeat count must not be negative',
+        );
+      }
       final issues = validator.validate(signal, caps);
       if (issues.isNotEmpty) {
         return TransmitRejected(issues.first.reason, issues.first.detail);

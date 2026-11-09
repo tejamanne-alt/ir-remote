@@ -278,6 +278,10 @@ void main() {
       final now = DateTime(2026);
       expect(Healthy(checkedAt: now).isUsable, isTrue);
       expect(Degraded(checkedAt: now, reason: 'r').isUsable, isTrue);
+      expect(
+        Degraded(checkedAt: now, reason: 'r', canSend: false).isUsable,
+        isFalse,
+      );
       expect(Unreachable(checkedAt: now, reason: 'r').isUsable, isFalse);
       expect(const CarrierRange(1, 2), const CarrierRange(1, 2));
       expect(

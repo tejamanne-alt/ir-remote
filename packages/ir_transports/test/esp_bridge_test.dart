@@ -24,6 +24,10 @@ final class FakeBridge {
   int lastContentLength = -1;
   bool closeUnauthorizedAfterUpgrade = false;
   bool lastChunked = false;
+  Duration wsDelay = Duration.zero;
+  int learnStarts = 0;
+  int socketsOpened = 0;
+  int socketsClosed = 0;
 
   Uri get uri => Uri.parse('http://127.0.0.1:${_server.port}');
 
@@ -93,7 +97,10 @@ final class FakeBridge {
         return;
       }
       if (!authed) return _error(r, 401, 'unauthorized');
+      await Future<void>.delayed(wsDelay);
       socket = await WebSocketTransformer.upgrade(r);
+      socketsOpened++;
+      socket!.listen((_) {}, onDone: () => socketsClosed++);
       return;
     }
     if (!authed) return _error(r, 401, 'unauthorized');
@@ -120,6 +127,7 @@ final class FakeBridge {
         sends.add(m);
         return _json(r, 200, {'sent': true, 'elapsedUs': 1000});
       case ('POST', '/v1/learn'):
+        learnStarts++;
         learning = true;
         learnTimeoutMs = (body! as Map)['timeoutMs'] as int;
         return _json(r, 202, {'learning': true});
@@ -377,6 +385,93 @@ void main() {
       expect(got.first.signal.carrierHz, 36000);
       await sub.cancel();
       await _waitFor(() => !bridge.learning);
+    });
+  });
+
+  group('lifecycle', () {
+    setUp(() => client.token = _token);
+
+    test('cancelling learn before the socket connects leaves nothing '
+        'open', () async {
+      bridge.wsDelay = const Duration(milliseconds: 50);
+      final sub = client.learnStream(continuous: true).listen((_) {});
+      await Future<void>.delayed(Duration.zero);
+      await sub.cancel();
+      await _waitFor(() => bridge.socketsOpened == 1);
+      await _waitFor(() => bridge.socketsClosed == 1);
+      expect(bridge.learnStarts, 0, reason: 'learn mode never started');
+      expect(bridge.learning, isFalse);
+    });
+
+    test('a socket that connects after the timeout is closed', () async {
+      bridge.wsDelay = const Duration(milliseconds: 700);
+      await expectLater(client.learn()!, emitsError(isA<TimeoutException>()));
+      await _waitFor(() => bridge.socketsOpened == 1);
+      await _waitFor(() => bridge.socketsClosed == 1);
+      expect(bridge.learnStarts, 0);
+    });
+
+    test('dispose ends an open learn stream', () async {
+      final done = client.learnStream(continuous: true).toList();
+      await _waitFor(() => bridge.socket != null && bridge.learning);
+      await client.dispose();
+      expect(await done, isEmpty);
+      await _waitFor(() => bridge.socketsClosed == 1);
+    });
+
+    test('after dispose, transmit and health answer instead of '
+        'throwing', () async {
+      await client.dispose();
+      expect(await client.transmit(nec), isA<TransmitTransportUnavailable>());
+      expect(await client.health(), isA<Unreachable>());
+      await expectLater(client.learn()!, emitsError(isA<StateError>()));
+    });
+
+    test('a negative repeat count is rejected, not thrown', () async {
+      final r = await client.transmit(nec, repeats: -1);
+      expect(
+        r,
+        isA<TransmitRejected>().having(
+          (e) => e.reason,
+          'reason',
+          RejectReason.invalidDurations,
+        ),
+      );
+      expect(bridge.sends, isEmpty);
+    });
+
+    test('a timed-out request frees its connection', () async {
+      // A raw TCP peer that reads the request and never answers, so the
+      // client's side of the connection closing is visible.
+      final server = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      var opened = 0;
+      var closed = 0;
+      server.listen((s) {
+        opened++;
+        s.listen((_) {}, onDone: () => closed++, onError: (_) => closed++);
+      });
+      final mute = EspBridgeTransport(
+        baseUri: Uri.parse('http://127.0.0.1:${server.port}'),
+        id: 'mute',
+        token: _token,
+        requestTimeout: const Duration(milliseconds: 200),
+      );
+      expect(await mute.transmit(nec), isA<TransmitTimeout>());
+      expect(opened, 1);
+      await _waitFor(() => closed == 1);
+      await mute.dispose();
+      await server.close();
+    });
+
+    test('an unpaired or de-paired hub answers but cannot send', () async {
+      client.token = null;
+      final unpaired = await client.health();
+      expect(unpaired, isA<Degraded>());
+      expect(unpaired.isUsable, isFalse);
+      client.token = 'ffffffffffffffffffffffffffffffff';
+      final cleared = await client.health();
+      expect(cleared, isA<Degraded>());
+      expect(cleared.isUsable, isFalse);
     });
   });
 

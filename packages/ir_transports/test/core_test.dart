@@ -24,6 +24,9 @@ final class _SlowTransport implements IrTransport {
   final List<int> order = [];
   bool throwOnSend = false;
   bool throwOnHealth = false;
+  HealthStatus Function()? healthResult;
+  Duration disposeDelay = Duration.zero;
+  bool disposed = false;
 
   @override
   String get displayName => id;
@@ -52,16 +55,21 @@ final class _SlowTransport implements IrTransport {
   Future<HealthStatus> health() async {
     if (throwOnHealth) throw StateError('health boom');
     await Future<void>.delayed(delay);
-    return Healthy(checkedAt: DateTime.now());
+    return healthResult?.call() ?? Healthy(checkedAt: DateTime.now());
   }
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    await Future<void>.delayed(disposeDelay);
+    disposed = true;
+  }
 }
+
+IrTransport _innerOf(IrTransport? t) => (t! as QueuedTransport).inner;
 
 void main() {
   group('isLanHost', () {
-    test('accepts private, link-local, loopback and .local addresses', () {
+    test('accepts private, link-local and loopback addresses', () {
       for (final h in [
         '10.0.0.5',
         '172.16.0.1',
@@ -72,7 +80,6 @@ void main() {
         'fe80::1',
         'fd12:3456::1',
         '::1',
-        'irbridge-a1b2c3.local',
       ]) {
         expect(isLanHost(h), isTrue, reason: h);
       }
@@ -86,6 +93,10 @@ void main() {
         '2001:4860::8888',
         'example.com',
         'evil.local.example.com',
+        // Names resolve later, possibly to an internet host.
+        'irbridge-a1b2c3.local',
+        'localhost',
+        '::ffff:8.8.8.8',
         '',
         'not an address',
       ]) {
@@ -270,6 +281,16 @@ void main() {
     });
   });
 
+  test(
+    'Simulated rejects a negative repeat count instead of throwing',
+    () async {
+      final sim = SimulatedTransport();
+      expect(await sim.transmit(_nec, repeats: -1), isA<TransmitRejected>());
+      expect(sim.sent, isEmpty);
+      await sim.dispose();
+    },
+  );
+
   group('TransportRegistry', () {
     test('prefers chosen, then built-in, then last healthy hub', () async {
       var now = DateTime(2026, 11, 9, 10);
@@ -337,6 +358,89 @@ void main() {
       await reg.dispose(); // idempotent
       await reg.register(SimulatedTransport());
       expect(reg.all, isEmpty);
+    });
+
+    test('concurrent re-registration keeps the last call and disposes the '
+        'rest', () async {
+      final reg = TransportRegistry();
+      final a = _SlowTransport(Duration.zero, id: 'x')
+        ..disposeDelay = const Duration(milliseconds: 20);
+      final b = _SlowTransport(Duration.zero, id: 'x');
+      final c = _SlowTransport(Duration.zero, id: 'x');
+      await reg.register(a);
+      await Future.wait([reg.register(b), reg.register(c)]);
+      expect(_innerOf(reg.byId('x')), same(c));
+      expect(a.disposed, isTrue);
+      expect(b.disposed, isTrue, reason: 'b was replaced, not leaked');
+      expect(c.disposed, isFalse);
+      await reg.dispose();
+      expect(c.disposed, isTrue);
+    });
+
+    test(
+      'a replacement is in place while the old transport disposes',
+      () async {
+        final reg = TransportRegistry();
+        final a = _SlowTransport(Duration.zero, id: 'x')
+          ..disposeDelay = const Duration(milliseconds: 20);
+        await reg.register(a);
+        final b = _SlowTransport(Duration.zero, id: 'x');
+        final pending = reg.register(b);
+        await Future<void>.delayed(Duration.zero);
+        expect(_innerOf(reg.byId('x')), same(b));
+        await pending;
+        await reg.dispose();
+      },
+    );
+
+    test(
+      'unregister and register racing dispose do not throw or leak',
+      () async {
+        final reg = TransportRegistry();
+        final a = _SlowTransport(Duration.zero, id: 'a')
+          ..disposeDelay = const Duration(milliseconds: 10);
+        final b = _SlowTransport(Duration.zero, id: 'b')
+          ..disposeDelay = const Duration(milliseconds: 10);
+        await reg.register(a);
+        await reg.register(b);
+        final late = _SlowTransport(Duration.zero, id: 'late');
+        await Future.wait([
+          reg.dispose(),
+          reg.unregister('a'),
+          reg.register(late),
+          reg.dispose(),
+        ]);
+        expect(a.disposed && b.disposed && late.disposed, isTrue);
+        expect(reg.all, isEmpty);
+      },
+    );
+
+    test('a health result for a replaced transport is dropped', () async {
+      final reg = TransportRegistry();
+      await reg.register(
+        _SlowTransport(const Duration(milliseconds: 30), id: 'h'),
+      );
+      final pending = reg.checkHealth('h');
+      await reg.register(_SlowTransport(Duration.zero, id: 'h'));
+      await pending;
+      expect(reg.healthOf('h'), isNull);
+      await reg.dispose();
+    });
+
+    test('a hub that answers but cannot send is not auto-selected', () async {
+      final reg = TransportRegistry();
+      await reg.register(
+        _SlowTransport(Duration.zero, id: 'unpaired')
+          ..healthResult = () => Degraded(
+            checkedAt: DateTime.now(),
+            reason: 'reachable but not paired',
+            canSend: false,
+          ),
+      );
+      await reg.checkHealth('unpaired');
+      expect(reg.resolve(), isNull);
+      expect(reg.resolve(preferredId: 'unpaired')!.id, 'unpaired');
+      await reg.dispose();
     });
 
     test('hubs known to be down are skipped when nothing is healthy', () async {

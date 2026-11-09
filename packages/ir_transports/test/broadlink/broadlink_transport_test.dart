@@ -184,6 +184,14 @@ void main() {
       expect(fake.countCommand(BroadlinkRmCommand.sendData), 1);
     });
 
+    test('a garbled success ack is not a reason to send again', () async {
+      fake.garbleSendDataReply = true;
+      final t = await open();
+      final result = await t.transmit(necLike());
+      expect(result, isA<TransmitSent>());
+      expect(fake.countCommand(BroadlinkRmCommand.sendData), 1);
+    });
+
     test('a hub send error is a hardwareError rejection', () async {
       fake.sendDataError = BroadlinkErrorCode.sendError;
       final t = await open();
@@ -306,14 +314,20 @@ void main() {
       expect(fake.sentIr, hasLength(2));
     });
 
-    test('re-authenticates once when the reply cannot be decrypted', () async {
+    test('an unreadable send-data ack is not resent, but the next press '
+        're-authenticates', () async {
       fake.staleKeyReply = StaleKeyReply.encryptedWithNewKey;
       final t = await open();
       expect(await t.transmit(necLike()), isA<TransmitSent>());
       fake.rotateKey();
+      // At most once: the ack says success, so the press is not repeated,
+      // even though this fake did not transmit it.
+      expect(await t.transmit(necLike()), isA<TransmitSent>());
+      expect(fake.staleRejections, 1);
+      expect(fake.sentIr, hasLength(1));
+      // The session was marked stale, so the next press authenticates first.
       expect(await t.transmit(necLike()), isA<TransmitSent>());
       expect(fake.auths, 2);
-      expect(fake.staleRejections, 1);
       expect(fake.sentIr, hasLength(2));
     });
 
