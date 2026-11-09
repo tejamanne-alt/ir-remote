@@ -21,6 +21,8 @@ final class FakeBridge {
   Duration sendDelay = Duration.zero;
   bool silent = false;
   String? rawInfo;
+  Uri? redirectTo;
+  int requests = 0;
   int lastContentLength = -1;
   bool closeUnauthorizedAfterUpgrade = false;
   bool lastChunked = false;
@@ -53,7 +55,11 @@ final class FakeBridge {
       _json(r, status, {'error': code, 'detail': 'fake: $code'});
 
   Future<void> _handle(HttpRequest r) async {
+    requests++;
     if (silent) return; // never answer
+    if (redirectTo != null) {
+      return r.response.redirect(redirectTo!.replace(path: r.uri.path));
+    }
     final path = r.uri.path;
     final authed =
         r.headers.value(HttpHeaders.authorizationHeader) == 'Bearer $_token';
@@ -461,6 +467,17 @@ void main() {
       await _waitFor(() => closed == 1);
       await mute.dispose();
       await server.close();
+    });
+
+    test('redirects are not followed', () async {
+      final elsewhere = FakeBridge();
+      await elsewhere.start();
+      bridge.redirectTo = elsewhere.uri;
+      expect(await client.health(), isNot(isA<Healthy>()));
+      expect(await client.transmit(nec), isA<TransmitRejected>());
+      expect(elsewhere.sends, isEmpty);
+      expect(elsewhere.requests, 0, reason: 'never contacted');
+      await elsewhere.stop();
     });
 
     test('an unpaired or de-paired hub answers but cannot send', () async {

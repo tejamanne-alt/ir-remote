@@ -541,6 +541,8 @@ final class EspBridgeTransport implements IrTransport {
     Future<Object?> run() async {
       final req = await _http.openUrl(method, baseUri.replace(path: path));
       open = req;
+      // A redirect could point anywhere, including off the LAN (ADR-024).
+      req.followRedirects = false;
       req.headers.contentType = ContentType.json;
       if (auth && token != null) {
         req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
@@ -562,7 +564,7 @@ final class EspBridgeTransport implements IrTransport {
       }
       final text = utf8.decode(bytes, allowMalformed: true);
       final Object? json = text.isEmpty ? null : jsonDecode(text);
-      if (res.statusCode >= 400) {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
         final code = json is Map && json['error'] is String
             ? json['error'] as String
             : 'http_${res.statusCode}';
