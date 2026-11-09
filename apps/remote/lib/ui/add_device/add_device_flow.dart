@@ -14,6 +14,7 @@ import '../learn/learn_screen.dart';
 import '../learn/pronto_dialog.dart';
 import '../remote/remote_screen.dart';
 import '../widgets/remote_button.dart';
+import '../widgets/text_input_dialog.dart';
 
 /// Categories offered when adding a device, in display order.
 const List<DeviceCategory> addableCategories = [
@@ -527,26 +528,12 @@ class _SaveDeviceScreenState extends State<SaveDeviceScreen> {
   Future<void> _newRoom() async {
     final l = AppLocalizations.of(context);
     final services = AppScope.of(context);
-    final c = TextEditingController();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(l.roomNewTitle),
-        content: TextField(controller: c, autofocus: true, maxLength: 40),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(l.actionCancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, c.text.trim()),
-            child: Text(l.actionAdd),
-          ),
-        ],
-      ),
+    final name = await showTextInputDialog(
+      context,
+      title: l.roomNewTitle,
+      confirmLabel: l.actionAdd,
     );
-    c.dispose();
-    if (name == null || name.isEmpty) return;
+    if (name == null) return;
     final id = await services.devices.addRoom(name);
     if (mounted) setState(() => _roomId = id);
   }

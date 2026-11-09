@@ -6,6 +6,7 @@ import 'package:irremote/data/models.dart';
 import 'package:irremote/services/app_services.dart';
 import 'package:irremote/ui/backup/backup_screen.dart';
 import 'package:irremote/ui/macros/macros_screen.dart';
+import 'package:irremote/ui/remote/edit_keys_screen.dart';
 import 'package:irremote/ui/remote/remote_screen.dart';
 
 import 'helpers.dart';
@@ -198,5 +199,40 @@ void main() {
     );
     expect(find.bySemanticsLabel('Netflix'), findsWidgets);
     await disposeServices(tester, s);
+  });
+
+  testWidgets('the button editor renames and deletes keys', (tester) async {
+    final (s, _) = await buildServices();
+    await tester.runAsync(() => _saveTv(s));
+    await pumpApp(tester, s);
+    _push(tester, const EditKeysScreen(deviceId: 'tv'));
+    await settle(tester);
+    expect(find.text('Power'), findsOneWidget);
+    await tester.tap(find.byTooltip('Rename').first);
+    await settle(tester);
+    await tester.enterText(find.byType(TextField), 'TV power');
+    await tester.tap(find.text('Save'));
+    await settle(tester, rounds: 6);
+    expect(find.text('TV power'), findsOneWidget);
+    await tester.tap(find.byTooltip('Delete').last);
+    await settle(tester, rounds: 6);
+    final d = await tester.runAsync(() => s.devices.load('tv'));
+    expect(d!.keys.length, 5);
+    await disposeServices(tester, s);
+  });
+
+  test('reordering writes positions in the new order', () async {
+    final (s, _) = await buildServices();
+    await _saveTv(s);
+    final d = (await s.devices.load('tv'))!;
+    final ordered = d.keys.values.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    await saveKeyOrder(s, 'tv', ordered.reversed.toList());
+    final after = (await s.devices.load('tv'))!;
+    final positions = {for (final k in after.keys.values) k.key: k.position};
+    expect(positions[ordered.last.key], 0);
+    expect(positions[ordered.first.key], ordered.length - 1);
+    expect(positions.values.toSet().length, ordered.length);
+    await s.dispose();
   });
 }

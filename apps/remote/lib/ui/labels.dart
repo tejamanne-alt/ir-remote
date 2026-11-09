@@ -31,9 +31,11 @@ IconData categoryIcon(DeviceCategory c) => switch (c) {
   DeviceCategory.generic => Icons.settings_remote,
 };
 
-/// Key label for screen readers and text buttons. Custom keys show their
-/// stored label, or the name after `custom:`.
+/// Key label for screen readers and text buttons: the user's own label if
+/// there is one, else the vocabulary name (or the name after `custom:`).
 String keyLabel(AppLocalizations l, String key, {String? customLabel}) {
+  // A label the user typed (learning, renaming) always wins.
+  if (customLabel != null && customLabel.trim().isNotEmpty) return customLabel;
   if (key.startsWith(Keys.customPrefix)) {
     return customLabel ?? key.substring(Keys.customPrefix.length);
   }

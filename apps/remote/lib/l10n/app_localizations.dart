@@ -1839,6 +1839,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Restored.'**
   String get backupRestored;
+
+  /// No description provided for @editButtonsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit buttons'**
+  String get editButtonsTitle;
+
+  /// No description provided for @editButtonsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag to reorder. Rename or delete buttons, or add new ones below.'**
+  String get editButtonsHint;
+
+  /// No description provided for @deviceMenuEditButtons.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit buttons'**
+  String get deviceMenuEditButtons;
+
+  /// No description provided for @keySourceDatabase.
+  ///
+  /// In en, this message translates to:
+  /// **'From the code database'**
+  String get keySourceDatabase;
+
+  /// No description provided for @keySourceLearned.
+  ///
+  /// In en, this message translates to:
+  /// **'Learned from your remote'**
+  String get keySourceLearned;
+
+  /// No description provided for @keySourceImported.
+  ///
+  /// In en, this message translates to:
+  /// **'Imported'**
+  String get keySourceImported;
 }
 
 class _AppLocalizationsDelegate

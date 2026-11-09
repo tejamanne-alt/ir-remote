@@ -997,4 +997,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get backupRestored => 'Restored.';
+
+  @override
+  String get editButtonsTitle => 'Edit buttons';
+
+  @override
+  String get editButtonsHint =>
+      'Drag to reorder. Rename or delete buttons, or add new ones below.';
+
+  @override
+  String get deviceMenuEditButtons => 'Edit buttons';
+
+  @override
+  String get keySourceDatabase => 'From the code database';
+
+  @override
+  String get keySourceLearned => 'Learned from your remote';
+
+  @override
+  String get keySourceImported => 'Imported';
 }

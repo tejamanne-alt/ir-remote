@@ -13,6 +13,8 @@ import '../learn/flipper_import.dart';
 import '../learn/learn_screen.dart';
 import '../learn/pronto_dialog.dart';
 import '../widgets/remote_button.dart';
+import '../widgets/text_input_dialog.dart';
+import 'edit_keys_screen.dart';
 
 /// Opens the remote for the device with [deviceId].
 class RemoteScreen extends StatelessWidget {
@@ -358,6 +360,7 @@ enum _MenuAction {
   favourite,
   rename,
   transport,
+  editButtons,
   learn,
   pronto,
   flipper,
@@ -371,31 +374,14 @@ class _DeviceMenu extends StatelessWidget {
 
   Future<void> _rename(BuildContext context) async {
     final l = AppLocalizations.of(context);
-    final controller = TextEditingController(text: device.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (c) => AlertDialog(
-        title: Text(l.deviceMenuRename),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 40,
-          decoration: InputDecoration(labelText: l.deviceNameLabel),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(c),
-            child: Text(l.actionCancel),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(c, controller.text.trim()),
-            child: Text(l.actionSave),
-          ),
-        ],
-      ),
+    final name = await showTextInputDialog(
+      context,
+      title: l.deviceMenuRename,
+      confirmLabel: l.actionSave,
+      initial: device.name,
+      fieldLabel: l.deviceNameLabel,
     );
-    controller.dispose();
-    if (name == null || name.isEmpty || !context.mounted) return;
+    if (name == null || !context.mounted) return;
     await AppScope.of(context).devices.rename(device.id, name);
   }
 
@@ -474,6 +460,12 @@ class _DeviceMenu extends StatelessWidget {
             await _rename(context);
           case _MenuAction.transport:
             await _chooseTransport(context);
+          case _MenuAction.editButtons:
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => EditKeysScreen(deviceId: device.id),
+              ),
+            );
           case _MenuAction.learn:
             await Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -502,6 +494,10 @@ class _DeviceMenu extends StatelessWidget {
         PopupMenuItem(
           value: _MenuAction.transport,
           child: Text(l.deviceMenuTransport),
+        ),
+        PopupMenuItem(
+          value: _MenuAction.editButtons,
+          child: Text(l.deviceMenuEditButtons),
         ),
         PopupMenuItem(value: _MenuAction.learn, child: Text(l.deviceMenuLearn)),
         PopupMenuItem(

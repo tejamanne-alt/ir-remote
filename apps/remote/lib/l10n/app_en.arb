@@ -600,5 +600,11 @@
   "backupRestore": "Restore from a backup",
   "backupRestoreConfirmTitle": "Replace everything?",
   "backupRestoreConfirmBody": "Restoring replaces all remotes, rooms, hubs, macros and settings on this phone with the backup.",
-  "backupRestored": "Restored."
+  "backupRestored": "Restored.",
+  "editButtonsTitle": "Edit buttons",
+  "editButtonsHint": "Drag to reorder. Rename or delete buttons, or add new ones below.",
+  "deviceMenuEditButtons": "Edit buttons",
+  "keySourceDatabase": "From the code database",
+  "keySourceLearned": "Learned from your remote",
+  "keySourceImported": "Imported"
 }
