@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ir_core/ir_core.dart';
 import 'package:ir_transports/ir_transports.dart';
@@ -123,5 +126,66 @@ void main() {
     );
     await hubs.loadAll();
     expect(registry.byId('esp:evil'), isNull);
+  });
+
+  test('re-adding a paired bridge keeps its token and only moves its '
+      'address', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((req) {
+      req.response
+        ..headers.contentType = ContentType.json
+        ..write(
+          jsonEncode({
+            'api': 1,
+            'fw': '1.0.0',
+            'id': 'a1b2c3d4e5f6',
+            'name': 'Renamed bridge',
+            'pairingWindowOpen': false,
+            'caps': {
+              'carrierMinHz': 30000,
+              'carrierMaxHz': 60000,
+              'maxPatternUs': 4000000,
+              'maxDurations': 1024,
+              'canLearn': true,
+            },
+          }),
+        )
+        ..close();
+    });
+    final db = memoryDb();
+    addTearDown(db.close);
+    final registry = TransportRegistry();
+    addTearDown(registry.dispose);
+    final repo = HubRepository(db);
+    final token = 'f' * 32;
+    await repo.upsert(
+      HubRecord(
+        id: 'esp:a1b2c3d4e5f6',
+        kind: TransportKind.espBridge,
+        name: 'Hall bridge',
+        host: '192.168.1.40',
+        port: 80,
+        token: token,
+      ),
+      DateTime.utc(2026),
+    );
+    final hubs = HubService(
+      repo: repo,
+      registry: registry,
+      devices: DeviceRepository(db),
+    );
+    await hubs.loadAll();
+    final r = await hubs.addEspBridge('127.0.0.1', port: server.port);
+    expect(r.token, token);
+    final stored = (await repo.all()).single;
+    expect(stored.id, 'esp:a1b2c3d4e5f6');
+    expect(stored.token, token);
+    expect(stored.host, '127.0.0.1');
+    expect(stored.port, server.port);
+    expect(stored.name, 'Hall bridge');
+    final row = await db.select(db.hubs).getSingle();
+    expect(row.addedAt.isAtSameMomentAs(DateTime.utc(2026)), isTrue);
+    expect(registry.byId('esp:a1b2c3d4e5f6'), isNotNull);
   });
 }

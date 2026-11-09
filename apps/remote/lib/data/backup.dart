@@ -4,6 +4,11 @@
 /// re-paired after a restore). Imports are bounded: at most 5 MB and 10,000
 /// signals, and every value is type-checked; malformed input throws
 /// [FormatException] and changes nothing.
+///
+/// Everything [BackupCodec.export] can write imports again. Key names and
+/// labels longer than the app now creates (an older version stored Flipper
+/// button names uncut) are shortened on import, as they are at creation,
+/// and macros follow the renamed keys.
 library;
 
 import 'dart:convert';
@@ -14,6 +19,7 @@ import 'package:ir_transports/ir_transports.dart' show isLanHost;
 
 import 'database.dart';
 import 'macros.dart';
+import 'names.dart';
 
 /// Format identifier written into every backup.
 const String backupFormat = 'irremote-backup';
@@ -168,11 +174,14 @@ final class BackupCodec {
     }
     final plan = _Plan();
     var signals = 0;
+    final roomIdsSeen = <int>{};
     for (final r in _list(m['rooms'], 'rooms')) {
       final rm = _map(r, 'room');
+      final id = _int(rm['id'], 'room.id');
+      if (!roomIdsSeen.add(id)) throw FormatException('duplicate room $id');
       plan.rooms.add(
         RoomsCompanion.insert(
-          id: Value(_int(rm['id'], 'room.id')),
+          id: Value(id),
           name: _str(rm['name'], 'room.name', max: 40),
           sortOrder: Value(_int(rm['sortOrder'] ?? 0, 'room.sortOrder')),
         ),
@@ -180,6 +189,8 @@ final class BackupCodec {
     }
     final roomIds = {for (final r in plan.rooms) r.id.value};
     final deviceIds = <String>{};
+    // Per device: shortened key names, so macros can follow them.
+    final keyRenames = <String, Map<String, String>>{};
     for (final d in _list(m['devices'], 'devices')) {
       final dm = _map(d, 'device');
       final id = _str(dm['id'], 'device.id', max: 64);
@@ -223,13 +234,16 @@ final class BackupCodec {
           ),
         ),
       );
-      final seenKeys = <String>{};
-      for (final k in _list(dm['keys'] ?? const <Object?>[], 'device.keys')) {
+      final keyList = _list(dm['keys'] ?? const <Object?>[], 'device.keys');
+      final renames = _boundKeyNames([
+        for (final k in keyList)
+          _str(_map(k, 'key')['key'], 'key.key', max: maxBackupBytes),
+      ], id);
+      if (renames.isNotEmpty) keyRenames[id] = renames;
+      for (final k in keyList) {
         final km = _map(k, 'key');
-        final name = _str(km['key'], 'key.key', max: 80);
-        if (!seenKeys.add(name)) {
-          throw FormatException('duplicate key $name in $id');
-        }
+        final raw = km['key']! as String;
+        final name = renames[raw] ?? raw;
         final signal = IrSignal.fromJson(km['signal']);
         final toggled = km['signalToggled'] == null
             ? null
@@ -253,7 +267,11 @@ final class BackupCodec {
           DeviceKeysCompanion.insert(
             deviceId: id,
             keyName: name,
-            label: Value(_optStr(km['label'], 'key.label')),
+            label: Value(
+              boundedLabel(
+                _optStr(km['label'], 'key.label', max: maxBackupBytes),
+              ),
+            ),
             signal: jsonEncode(signal.toJson()),
             signalToggled: Value(
               toggled == null ? null : jsonEncode(toggled.toJson()),
@@ -266,8 +284,11 @@ final class BackupCodec {
         );
       }
     }
+    final hubIds = <String>{};
     for (final h in _list(m['hubs'] ?? const <Object?>[], 'hubs')) {
       final hm = _map(h, 'hub');
+      final hubId = _str(hm['id'], 'hub.id', max: 64);
+      if (!hubIds.add(hubId)) throw FormatException('duplicate hub $hubId');
       final kind = _str(hm['kind'], 'hub.kind');
       if (!const {'espBridge', 'broadlink'}.contains(kind)) {
         throw FormatException('unknown hub kind $kind');
@@ -284,7 +305,7 @@ final class BackupCodec {
       if (extra != null) _map(extra, 'hub.extra');
       plan.hubs.add(
         HubsCompanion.insert(
-          id: _str(hm['id'], 'hub.id', max: 64),
+          id: hubId,
           kind: kind,
           name: _str(hm['name'], 'hub.name', max: 64),
           host: host,
@@ -306,12 +327,24 @@ final class BackupCodec {
         ),
       );
     });
+    final macroIds = <String>{};
     for (final mc in _list(m['macros'] ?? const <Object?>[], 'macros')) {
       final mm = _map(mc, 'macro');
-      final steps = parseSteps(jsonEncode(mm['steps']));
+      final macroId = _str(mm['id'], 'macro.id', max: 64);
+      if (!macroIds.add(macroId)) {
+        throw FormatException('duplicate macro $macroId');
+      }
+      final steps = [
+        for (final st in parseSteps(jsonEncode(mm['steps'])))
+          MacroStep(
+            deviceId: st.deviceId,
+            key: keyRenames[st.deviceId]?[st.key] ?? st.key,
+            delay: st.delay,
+          ),
+      ];
       plan.macros.add(
         MacrosCompanion.insert(
-          id: _str(mm['id'], 'macro.id', max: 64),
+          id: macroId,
           name: _str(mm['name'], 'macro.name', max: 40),
           steps: jsonEncode([for (final s in steps) s.toJson()]),
           sortOrder: Value(_int(mm['sortOrder'] ?? 0, 'macro.sortOrder')),
@@ -320,6 +353,32 @@ final class BackupCodec {
       );
     }
     return plan;
+  }
+
+  /// Checks [names] (one device's keys) for duplicates and maps each name
+  /// longer than [maxKeyNameLength] to a shortened one that clashes with no
+  /// other key of the device.
+  static Map<String, String> _boundKeyNames(List<String> names, String id) {
+    final seen = <String>{};
+    for (final n in names) {
+      if (!seen.add(n)) throw FormatException('duplicate key $n in $id');
+    }
+    final taken = {
+      for (final n in names)
+        if (n.length <= maxKeyNameLength) n,
+    };
+    final out = <String, String>{};
+    for (final n in names) {
+      if (n.length <= maxKeyNameLength) continue;
+      var candidate = boundedKeyName(n);
+      for (var i = 2; taken.contains(candidate); i++) {
+        final suffix = '~$i';
+        candidate = truncateUtf16(n, maxKeyNameLength - suffix.length) + suffix;
+      }
+      taken.add(candidate);
+      out[n] = candidate;
+    }
+    return out;
   }
 
   static Map<Object?, Object?> _map(Object? v, String what) =>
@@ -342,8 +401,8 @@ final class BackupCodec {
     return v;
   }
 
-  static String? _optStr(Object? v, String what) =>
-      v == null ? null : _str(v, what);
+  static String? _optStr(Object? v, String what, {int max = 1024}) =>
+      v == null ? null : _str(v, what, max: max);
 
   static int _int(Object? v, String what) =>
       v is int ? v : throw FormatException('$what must be an integer');

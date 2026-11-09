@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:ir_core/ir_core.dart';
 
 import '../l10n/app_localizations.dart';
+import '../services/file_io.dart';
 import '../services/send_service.dart';
+import '../transports/android_consumer_ir.dart';
 
 /// Category name.
 String categoryLabel(AppLocalizations l, DeviceCategory c) => switch (c) {
@@ -136,18 +138,35 @@ IconData? keyIcon(String key) => switch (key) {
   _ => null,
 };
 
+/// The name shown for a transport: the phone's own emitter and the
+/// simulator in the user's language, hubs by their own (user-given) name.
+String transportLabel(
+  AppLocalizations l,
+  TransportKind? kind,
+  String? displayName,
+) => switch (kind) {
+  TransportKind.builtIn => l.transportThisPhone,
+  TransportKind.simulated => l.simulatorName,
+  _ => displayName ?? '',
+};
+
 /// The message shown for a send outcome; `null` for success.
 String? outcomeMessage(AppLocalizations l, SendOutcome o) {
   if (o.ok) return null;
   if (o.missingKey) return l.remoteMissingKey('');
   if (o.isNoTransport) return l.resultNoTransport;
-  final t = o.transportName ?? '';
+  final t = transportLabel(l, o.transportKind, o.transportName);
   return switch (o.result) {
     TransmitSent() => null,
-    TransmitTransportUnavailable(:final detail) => l.resultUnavailable(
-      t,
-      detail,
-    ),
+    TransmitTransportUnavailable(:final detail) =>
+      o.transportKind == TransportKind.builtIn
+          ? switch (detail) {
+              ConsumerIrDetail.noEmitter => l.resultBuiltInNoEmitter,
+              ConsumerIrDetail.permission => l.resultBuiltInPermission,
+              ConsumerIrDetail.channelMissing => l.resultBuiltInUnavailable,
+              _ => l.resultUnavailable(t, detail),
+            }
+          : l.resultUnavailable(t, detail),
     TransmitTimeout() => l.resultTimeout(t),
     TransmitRejected(:final reason, :final detail) => switch (reason) {
       RejectReason.carrierOutOfRange => l.resultCarrier(t),
@@ -159,3 +178,11 @@ String? outcomeMessage(AppLocalizations l, SendOutcome o) {
     },
   };
 }
+
+/// The message shown when a picked file cannot be imported.
+String importErrorMessage(AppLocalizations l, Object error) => switch (error) {
+  NotTextFileException() => l.importFailed(l.importNotText),
+  FileTooLargeException() => l.importFailed(l.importTooLarge),
+  FormatException(:final message) => l.importFailed(message),
+  _ => l.importFailed(l.importUnreadable),
+};

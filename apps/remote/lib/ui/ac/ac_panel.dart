@@ -72,18 +72,25 @@ class _AcPanelState extends State<AcPanel> {
       widget.device,
       e.encode(clamped, toggle: toggle),
     );
-    if (!mounted) return;
-    setState(() => _sending = false);
+    // "Last sent" is recorded even if the user left the panel meanwhile:
+    // the frame went out, so the assumption must follow it.
     if (o.ok) {
-      setState(() => _state = clamped);
-      await services.devices.saveAcState(
-        widget.device.id,
-        clamped,
-        DateTime.now(),
-      );
-    } else {
-      showSendError(context, outcomeMessage(l, o) ?? '');
+      try {
+        await services.devices.saveAcState(
+          widget.device.id,
+          clamped,
+          DateTime.now(),
+        );
+      } on Object {
+        // the remote was deleted meanwhile; nothing to record
+      }
     }
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      if (o.ok) _state = clamped;
+    });
+    if (!o.ok) showSendError(context, outcomeMessage(l, o) ?? '');
   }
 
   @override

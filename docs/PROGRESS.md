@@ -10,7 +10,7 @@ been verified on real hardware; every human gate is pending (see
 | M1 Signal core | **gate passed** (CI) | golden fixtures from the independent IRP oracle; property, jitter and fuzz tests; codec line coverage 97.40% (≥ 95%); Pronto parser 10,000 fuzz cases |
 | M2 Code database | **gate passed** (CI) | L1 + L5 checks; Flipper/irdb parser fuzzing (12,000 each); `tools/scripts/check_code_db.sh` rebuilds byte-identically (content hash `1b5fa616…`); L4 refuses irdb |
 | M3 Transports | in progress | transport tests against fakes pass (115); Android instrumented test for capability detection written (`androidTest/.../ConsumerIrCapabilitiesTest.kt`), runs in the nightly emulator job, first run pending; H1 pending |
-| F1 Bridge firmware | **gate passed**; H2 pending | CI [run 42578636634](https://github.com/tejamanne-alt/ir-remote/actions/runs/42578636634): `pio run -e esp32dev` builds, `pio test -e native` passes; 80 host tests pass with ASan/UBSan. H2 (flash, pair, capture loop) needs a board |
+| F1 Bridge firmware | **gate passed**; H2 pending | CI [run 42689292033](https://github.com/tejamanne-alt/ir-remote/actions/runs/42689292033): `pio run -e esp32dev` builds, `pio test -e native` passes; 87 host tests pass with ASan/UBSan. Audit fixes (boot, in-band WS auth, async sends) are untested on hardware. H2 (flash, pair, capture loop) needs a board |
 | M4 Key-code app | in progress | widget tests for onboarding, add device, remote, hubs, settings, AC panel, macros, backup; add-device integration test written (nightly emulator/simulator job, not yet run); migration tests v1→v2; H3 pending |
 | M5 AC engine | blocked on human | `AcState`, `AcCapabilities`, encoder contract and the AC panel exist; **no encoders ship** (Q2 licensing route, Q3 brand list, H4 captures) |
 | M6 Learning, custom remotes, macros, import/export | gate tests pass; one feature gap | export → wipe → import identical; 2,000-mutation backup fuzz; Flipper import fixtures; macro scheduler tests; learning screen; button editor (drag to reorder, rename, delete; theme colours only). **Missing:** copying a single key from a database code set into a custom remote |
@@ -19,12 +19,15 @@ been verified on real hardware; every human gate is pending (see
 
 ## Next
 
-1. M3: confirm the first nightly run of the emulator job (integration test
+1. H2 first, on a board: boot, pairing, the in-band WebSocket auth
+   (ADR-026) and the async send path. They are built and host-tested, but
+   have not been run on hardware.
+2. M3: confirm the first nightly run of the emulator job (integration test
    plus `connectedDebugAndroidTest`) and the iOS simulator job.
-2. Debug Loopback screen for the closed-loop rig, so H1 can run.
-3. M6: let custom remotes take single keys from database code sets.
-4. M7: Android widget and Quick Settings tile; iOS widgets, App Intents,
-   Control Center.
+3. Debug Loopback screen for the closed-loop rig, so H1 can run.
+4. M6: let custom remotes take single keys from database code sets.
+5. M7: Android widget and Quick Settings tile; iOS widgets, App Intents,
+   Control Center; room management (move a remote, delete a room).
 
 ## Blocked on human
 
@@ -119,3 +122,39 @@ Gates: inner pass · outer 2 findings (closed-stream crash, L4 false positive;
 both fixed) · F1 via CI `pio run -e esp32dev`
 
 Next session starts with: the first nightly emulator and simulator runs.
+
+## Session 3 — 2026-11-09
+
+Milestone: an audit of correctness, robustness and resiliency across every
+package. The M0 to M2 and F1 gates still pass.
+
+Done:
+- Four independent audits: transports, firmware, core with code DB, and the
+  app. 45 findings, every one reproduced before it was fixed. 43 are fixed
+  with regression tests; 2 are documented. The full list is in
+  `docs/AUDIT_2026-11-09.md`.
+- **Critical (firmware):**
+  - the bridge aborted on every boot (TCP/IP stack not up);
+  - newer cores never checked the WebSocket token.
+
+  Both are fixed (ADR-026), but neither fix has been verified on hardware.
+- **High:**
+  - decoders matched a prefix of longer frames, so learn saved the wrong
+    signal;
+  - scrolling sent IR;
+  - hold-to-repeat timing was wrong (ADR-027, ADR-028);
+  - Broadlink could send twice on an unreadable ack.
+
+Gates:
+- Inner loop: pass.
+- Firmware host tests: 87/87.
+- CI run 8: firmware built with PlatformIO.
+- M1: 97.65%.
+- M2: hash unchanged.
+- Outer loop: this session was the outer loop. Its findings are the audit.
+
+Decisions: ADR-026 (in-band WebSocket auth, async sends), ADR-027 (gesture
+arena, 40 ms press delay), ADR-028 (repeat timing from RepeatSpec).
+
+Next session starts with: H2 on a board, then the nightly emulator and
+simulator runs.

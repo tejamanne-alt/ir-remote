@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:ir_core/ir_core.dart';
 
 import '../../data/models.dart';
+import '../../data/names.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import 'learn_screen.dart';
@@ -36,7 +37,7 @@ Future<void> addProntoKey(BuildContext context, SavedDevice device) async {
   final entry = await showProntoDialog(context);
   if (entry == null) return;
   final k = keyFromCapture(
-    Keys.normalize(entry.label),
+    customKeyName(entry.label),
     entry.label,
     entry.signal,
     position: device.keys.length,

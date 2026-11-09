@@ -2,6 +2,7 @@
 /// pulse, hold-to-repeat, and a failure message naming the cause.
 library;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -18,6 +19,70 @@ void showSendError(BuildContext context, String message) {
   m
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(message)));
+}
+
+/// How long a press inside a scrollable must stay within the touch slop
+/// before it is a press rather than the start of a scroll.
+///
+/// The contract's budget is tap to transmit start within 50 ms (p95) on the
+/// built-in emitter (BUILD_PROMPT, "Performance budgets"), so this is well
+/// under Flutter's 100 ms `kPressTimeout`. A flick passes the 18 dp touch
+/// slop sooner than this; a drag that starts slower counts as a press.
+const Duration remotePressDelay = Duration(milliseconds: 40);
+
+/// Recognizes a press on a remote button through the gesture arena, so a
+/// scroll that starts on a button sends nothing.
+///
+/// The press starts only once this recognizer wins the arena:
+/// * outside a scrollable it is the only member, so it wins at pointer down
+///   and the first frame goes out at once;
+/// * inside a scrollable it wins when the pointer lifts (a tap), or when the
+///   pointer has stayed within the touch slop for [remotePressDelay]: it
+///   then claims the pointer, so the scrollable can no longer take it and a
+///   stationary press goes on to hold-to-repeat;
+/// * a drag past the touch slop before that hands the pointer to the
+///   scrollable, and nothing is sent.
+///
+/// Trade-off: inside a scrollable a tap's first frame waits for the release
+/// or for [remotePressDelay], whichever comes first, and a finger that rests
+/// on a button that long no longer scrolls the remote. Moving past the slop
+/// after the claim ends the press like a release.
+final class RemotePressGestureRecognizer extends BaseTapGestureRecognizer {
+  /// Creates the recognizer.
+  RemotePressGestureRecognizer({super.debugOwner});
+
+  // BaseTapGestureRecognizer fixes its deadline at kPressTimeout (100 ms);
+  // the field is read through this getter.
+  @override
+  Duration? get deadline => remotePressDelay;
+
+  /// The press won the arena: send.
+  VoidCallback? onPressStart;
+
+  /// The press ended (released, cancelled or slid away).
+  VoidCallback? onPressEnd;
+
+  @override
+  void didExceedDeadline() => resolve(GestureDisposition.accepted);
+
+  @override
+  void handleTapDown({required PointerDownEvent down}) => onPressStart?.call();
+
+  @override
+  void handleTapUp({
+    required PointerDownEvent down,
+    required PointerUpEvent up,
+  }) => onPressEnd?.call();
+
+  @override
+  void handleTapCancel({
+    required PointerDownEvent down,
+    PointerCancelEvent? cancel,
+    required String reason,
+  }) => onPressEnd?.call();
+
+  @override
+  String get debugDescription => 'remote press';
 }
 
 /// A button that sends [keyName] of [device].
@@ -64,6 +129,7 @@ class _RemoteButtonState extends State<RemoteButton> {
 
   void _down() {
     if (!_available) return;
+    _hold?.release();
     HapticFeedback.lightImpact();
     setState(() => _pulse = true);
     final services = AppScope.of(context);
@@ -137,10 +203,20 @@ class _RemoteButtonState extends State<RemoteButton> {
           : null,
       child: Opacity(
         opacity: _available ? 1 : 0.38,
-        child: Listener(
-          onPointerDown: (_) => _down(),
-          onPointerUp: (_) => _up(),
-          onPointerCancel: (_) => _up(),
+        child: RawGestureDetector(
+          excludeFromSemantics: true,
+          gestures: {
+            if (_available)
+              RemotePressGestureRecognizer:
+                  GestureRecognizerFactoryWithHandlers<
+                    RemotePressGestureRecognizer
+                  >(
+                    () => RemotePressGestureRecognizer(debugOwner: this),
+                    (r) => r
+                      ..onPressStart = _down
+                      ..onPressEnd = _up,
+                  ),
+          },
           child: AnimatedScale(
             scale: _pulse ? 0.92 : 1,
             duration: const Duration(milliseconds: 90),

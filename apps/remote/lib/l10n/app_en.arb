@@ -606,5 +606,40 @@
   "deviceMenuEditButtons": "Edit buttons",
   "keySourceDatabase": "From the code database",
   "keySourceLearned": "Learned from your remote",
-  "keySourceImported": "Imported"
+  "keySourceImported": "Imported",
+  "nameTooLong": "Too long: use at most {max} characters (emoji count as two or more).",
+  "@nameTooLong": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "nameSaveFailed": "That name couldn't be saved. Try a shorter one.",
+  "learnEnded": "The hub stopped listening before a signal arrived. Try again.",
+  "transportThisPhone": "This phone",
+  "resultBuiltInNoEmitter": "This phone has no IR blaster.",
+  "resultBuiltInPermission": "This phone didn't allow the app to use its IR blaster.",
+  "resultBuiltInUnavailable": "This phone's IR blaster isn't available in this version of the app.",
+  "importNotText": "it isn't a text file (UTF-8).",
+  "importTooLarge": "the file is larger than 5 MB.",
+  "importUnreadable": "the file couldn't be read.",
+  "hubAlreadyAdded": "{host} · Already added",
+  "@hubAlreadyAdded": {
+    "placeholders": {
+      "host": {
+        "type": "String"
+      }
+    }
+  },
+  "hubUpdated": "{name}'s address is updated.",
+  "@hubUpdated": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "backupExportFailed": "Couldn't create the backup file. Try again.",
+  "backupRestoreFailed": "Couldn't restore the backup. Nothing was changed."
 }

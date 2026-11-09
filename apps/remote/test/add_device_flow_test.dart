@@ -91,6 +91,77 @@ void main() {
     await disposeServices(tester, services);
   });
 
+  testWidgets('Yes and No wait for "Send again"; a late result never applies '
+      'to the next set', (tester) async {
+    final (services, sim) = await buildServices();
+    await pumpApp(tester, services);
+    await tester.tap(find.text('Add device'));
+    await settle(tester);
+    await tester.tap(find.text('TV'));
+    await settle(tester);
+    await tester.tap(find.text('Samsung'));
+    await settle(tester);
+    await tester.tap(find.text('Send Power'));
+    await settle(tester);
+    expect(find.text('Did it respond?'), findsOneWidget);
+
+    sim.latency = const Duration(seconds: 2);
+    await tester.tap(find.text('Send again'));
+    await tester.pump(const Duration(milliseconds: 100));
+    FilledButton yes() =>
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Yes'));
+    OutlinedButton no() => tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'No'),
+    );
+    expect(yes().onPressed, isNull);
+    expect(no().onPressed, isNull);
+    await tester.tap(find.text('No'), warnIfMissed: false);
+    await tester.pump(const Duration(seconds: 3));
+    await settle(tester);
+    // Still on set 1: the answer could not be given mid-send, so set 2 never
+    // shows "Did it respond?" for a code that was not sent.
+    expect(find.text('Set 1 of 2'), findsOneWidget);
+    expect(yes().onPressed, isNotNull);
+    await disposeServices(tester, services);
+  });
+
+  testWidgets('RC5 toggles alternate during matching and carry into the '
+      'saved remote', (tester) async {
+    final (services, sim) = await buildServices();
+    await pumpApp(tester, services);
+    await tester.tap(find.text('Add device'));
+    await settle(tester);
+    await tester.tap(find.text('TV'));
+    await settle(tester);
+    await tester.tap(find.text('Philips'));
+    await settle(tester);
+    await tester.tap(find.text('Send Power'));
+    await settle(tester);
+    await tester.tap(find.text('Send again'));
+    await settle(tester);
+    await tester.tap(find.text('Yes'));
+    await settle(tester);
+    await tester.tap(find.text('Send Volume up'));
+    await settle(tester);
+    await tester.tap(find.text('Yes'));
+    await settle(tester);
+    await tester.tap(find.text('Save'));
+    await settle(tester, rounds: 8);
+    await tester.tap(find.bySemanticsLabel('Power').first);
+    await settle(tester);
+    final seen = [
+      for (final x in sim.sent)
+        () {
+          final d = const Rc5().decode(x.signal.durationsUs)!;
+          return '${d.params['F']}/T${d.params['T']}';
+        }(),
+    ];
+    // Power, Send again, Volume up, then the first Power on the saved remote:
+    // every new press flips the toggle (ADR-008).
+    expect(seen, ['12/T0', '12/T1', '16/T0', '12/T1']);
+    await disposeServices(tester, services);
+  });
+
   testWidgets('when every set fails the user gets learning and Pronto paste', (
     tester,
   ) async {

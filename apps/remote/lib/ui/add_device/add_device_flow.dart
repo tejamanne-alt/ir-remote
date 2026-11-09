@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:ir_core/ir_core.dart';
 
 import '../../data/models.dart';
+import '../../data/names.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import '../../services/code_library.dart';
@@ -185,6 +186,10 @@ class _MatchingScreenState extends State<MatchingScreen> {
   bool _sent = false;
   bool _sending = false;
 
+  /// Toggle state of the appliance being matched (RC5/RC6), handed to the
+  /// saved remote so its first press flips the bit again.
+  final String _toggleScope = 'matching:${newId()}';
+
   CodeSet? get _set =>
       _index < widget.codeSets.length ? widget.codeSets[_index] : null;
 
@@ -219,17 +224,41 @@ class _MatchingScreenState extends State<MatchingScreen> {
     if (s == null) return;
     final services = AppScope.of(context);
     final l = AppLocalizations.of(context);
+    // The result belongs to this set and step only; an answer or skip that
+    // happened meanwhile makes it stale.
+    final index = _index;
+    final phase = _phase;
+    final SavedKey k;
+    try {
+      k = _snapshot(s, key);
+    } on CommandResolutionException {
+      _next(); // a broken set is skipped, never shown as a dead end
+      return;
+    }
     setState(() => _sending = true);
     try {
-      final o = await services.send.sendUnsaved(resolveKey(s, key));
-      if (!mounted) return;
+      final o = await services.send.sendUnsavedKey(
+        k,
+        toggleScope: _toggleScope,
+      );
+      if (!mounted || index != _index || phase != _phase) return;
       final msg = outcomeMessage(l, o);
       if (msg != null) showSendError(context, msg);
       setState(() => _sent = o.ok || _sent);
-    } on CommandResolutionException {
-      _next(); // a broken set is skipped, never shown as a dead end
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  static SavedKey _snapshot(CodeSet s, String key) {
+    final code = s.keys[key];
+    if (code == null) {
+      throw CommandResolutionException('code set ${s.id} has no key $key');
+    }
+    try {
+      return snapshotKey(key, code);
+    } on Object catch (e) {
+      throw CommandResolutionException('code set ${s.id} key $key: $e');
     }
   }
 
@@ -254,6 +283,7 @@ class _MatchingScreenState extends State<MatchingScreen> {
           category: widget.category,
           brand: widget.brand,
           codeSet: s,
+          toggleScope: _toggleScope,
         ),
       ),
     );
@@ -328,8 +358,16 @@ class _MatchingScreenState extends State<MatchingScreen> {
             spacing: 12,
             runSpacing: 8,
             children: [
-              FilledButton(onPressed: _yes, child: Text(l.answerYes)),
-              OutlinedButton(onPressed: _next, child: Text(l.answerNo)),
+              // An answer waits for "Send again" to finish, so it is never
+              // given for a code that has not gone out yet.
+              FilledButton(
+                onPressed: _sending ? null : _yes,
+                child: Text(l.answerYes),
+              ),
+              OutlinedButton(
+                onPressed: _sending ? null : _next,
+                child: Text(l.answerNo),
+              ),
               TextButton(
                 onPressed: _sending ? null : () => _send(key),
                 child: Text(l.answerSendAgain),
@@ -406,15 +444,17 @@ class _AllFailed extends StatelessWidget {
             title: Text(l.optionImportFlipper),
             onTap: () async {
               final nav = Navigator.of(context);
+              final devices = AppScope.of(context).devices;
               final d = await _createEmpty(context);
-              if (!context.mounted) return;
-              final n = await importFlipperInto(context, d.id);
-              if (n == null || n == 0) {
-                if (context.mounted) {
-                  await AppScope.of(context).devices.delete(d.id);
-                }
-                return;
+              int? n;
+              try {
+                if (context.mounted) n = await importFlipperInto(context, d.id);
+              } finally {
+                // Nothing imported (cancelled, unreadable file, or an error):
+                // never leave an empty remote behind.
+                if (n == null || n == 0) await devices.delete(d.id);
               }
+              if (n == null || n == 0) return;
               nav.pushReplacement(
                 MaterialPageRoute<void>(
                   builder: (_) => RemoteScreen(deviceId: d.id),
@@ -437,7 +477,7 @@ class _AllFailed extends StatelessWidget {
               if (entry == null || !context.mounted) return;
               final d = await _createEmpty(context);
               final k = keyFromCapture(
-                Keys.normalize(entry.label),
+                customKeyName(entry.label),
                 entry.label,
                 entry.signal,
               );
@@ -482,6 +522,7 @@ class SaveDeviceScreen extends StatefulWidget {
     required this.category,
     this.brand,
     this.codeSet,
+    this.toggleScope,
   });
 
   /// Category.
@@ -492,6 +533,9 @@ class SaveDeviceScreen extends StatefulWidget {
 
   /// The matched code set (`null` for a custom remote).
   final CodeSet? codeSet;
+
+  /// Toggle scope of the matching that found [codeSet], if any.
+  final String? toggleScope;
 
   @override
   State<SaveDeviceScreen> createState() => _SaveDeviceScreenState();
@@ -534,7 +578,13 @@ class _SaveDeviceScreenState extends State<SaveDeviceScreen> {
       confirmLabel: l.actionAdd,
     );
     if (name == null) return;
-    final id = await services.devices.addRoom(name);
+    final int id;
+    try {
+      id = await services.devices.addRoom(name);
+    } on Object {
+      if (mounted) showSendError(context, l.nameSaveFailed);
+      return;
+    }
     if (mounted) setState(() => _roomId = id);
   }
 
@@ -570,6 +620,10 @@ class _SaveDeviceScreenState extends State<SaveDeviceScreen> {
       keys: keys,
     );
     await services.devices.save(device);
+    final scope = widget.toggleScope;
+    if (scope != null) {
+      services.send.adoptToggleState(scope: scope, deviceId: device.id);
+    }
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     final nav = Navigator.of(context);

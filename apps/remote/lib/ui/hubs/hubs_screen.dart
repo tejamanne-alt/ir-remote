@@ -200,8 +200,12 @@ class _AddHubScreenState extends State<AddHubScreen> {
   void _browse() {
     final services = AppScope.of(context);
     _sub = services.hubs.discovery.discover().listen(
-      (list) => setState(() => _found = list),
-      onError: (Object _) => setState(() => _browseTimedOut = true),
+      (list) {
+        if (mounted) setState(() => _found = list);
+      },
+      onError: (Object _) {
+        if (mounted) setState(() => _browseTimedOut = true);
+      },
     );
     _timer = Timer(widget.browseTimeout, () {
       if (mounted && _found.isEmpty) setState(() => _browseTimedOut = true);
@@ -226,6 +230,13 @@ class _AddHubScreenState extends State<AddHubScreen> {
     try {
       final hub = await services.hubs.addEspBridge(host, port: port);
       if (!mounted) return;
+      if (hub.token != null) {
+        // Already paired: its address was updated, nothing else to do.
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(l.hubUpdated(hub.name))));
+        Navigator.of(context).pop();
+        return;
+      }
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(builder: (_) => PairBridgeScreen(hub: hub)),
       );
@@ -307,7 +318,14 @@ class _AddHubScreenState extends State<AddHubScreen> {
                 minTileHeight: 64,
                 leading: const Icon(Icons.memory),
                 title: Text(b.name),
-                subtitle: Text(b.host),
+                subtitle: Text(
+                  services.hubs.addedHubFor(b) == null
+                      ? b.host
+                      : l.hubAlreadyAdded(b.host),
+                ),
+                trailing: services.hubs.addedHubFor(b) == null
+                    ? null
+                    : const Icon(Icons.check_circle_outline),
                 onTap: _busy ? null : () => _addBridge(b.host, b.port),
               ),
             const Divider(height: 32),
@@ -393,12 +411,15 @@ class _PairBridgeScreenState extends State<PairBridgeScreen> {
           .showSnackBar(SnackBar(content: Text(l.hubPaired(widget.hub.name))));
       Navigator.of(context).pop();
     } on BridgeException catch (e) {
+      // The user may have left the screen while the request was pending.
+      if (!mounted) return;
       setState(
         () => _error = e.code == 'pairing_window_closed'
             ? l.hubPairWindowClosed
             : l.hubPairFailed(e.detail),
       );
     } on Object catch (e) {
+      if (!mounted) return;
       setState(() => _error = l.hubPairFailed('$e'));
     } finally {
       if (mounted) setState(() => _busy = false);

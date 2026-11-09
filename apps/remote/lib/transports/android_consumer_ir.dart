@@ -175,6 +175,21 @@ final class OemQuirk {
       (model == '*' || model.toLowerCase() == info.model.toLowerCase());
 }
 
+/// Reasons [AndroidConsumerIrTransport] reports in
+/// [TransmitTransportUnavailable.detail]. They are stable values, not UI
+/// text: `ui/labels.dart` maps each to a localized message, and the debug
+/// Signal Inspector shows them as they are.
+abstract final class ConsumerIrDetail {
+  /// The phone has no IR emitter (detection, or the platform's NO_EMITTER).
+  static const noEmitter = 'this phone has no IR emitter';
+
+  /// The platform refused the IR permission.
+  static const permission = 'IR permission denied';
+
+  /// The platform channel is missing (for example a build without it).
+  static const channelMissing = 'IR channel not available';
+}
+
 /// Sends through Android's `ConsumerIrManager.transmit()`.
 ///
 /// `transmit()` is synchronous on the platform side and only accepts patterns
@@ -220,6 +235,8 @@ final class AndroidConsumerIrTransport implements IrTransport {
   @override
   String get id => 'android-builtin';
 
+  /// Not shown in the UI as it is: `transportLabel` in `ui/labels.dart`
+  /// names the built-in emitter from the ARB file.
   @override
   String get displayName => 'This phone';
 
@@ -235,7 +252,7 @@ final class AndroidConsumerIrTransport implements IrTransport {
   Future<TransmitResult> transmit(IrSignal signal, {int repeats = 0}) async {
     final sw = Stopwatch()..start();
     if (!info.canTransmit) {
-      return const TransmitTransportUnavailable('this phone has no IR emitter');
+      return const TransmitTransportUnavailable(ConsumerIrDetail.noEmitter);
     }
     if (repeats < 0) {
       return const TransmitRejected(
@@ -259,11 +276,11 @@ final class AndroidConsumerIrTransport implements IrTransport {
         });
       } on PlatformException catch (e) {
         return switch (e.code) {
-          'NO_EMITTER' => TransmitTransportUnavailable(
-            e.message ?? 'no emitter',
+          'NO_EMITTER' => const TransmitTransportUnavailable(
+            ConsumerIrDetail.noEmitter,
           ),
-          'PERMISSION' => TransmitTransportUnavailable(
-            e.message ?? 'permission denied',
+          'PERMISSION' => const TransmitTransportUnavailable(
+            ConsumerIrDetail.permission,
           ),
           'INVALID' => TransmitRejected(
             RejectReason.hardwareError,
@@ -275,7 +292,9 @@ final class AndroidConsumerIrTransport implements IrTransport {
           ),
         };
       } on MissingPluginException {
-        return const TransmitTransportUnavailable('IR channel not available');
+        return const TransmitTransportUnavailable(
+          ConsumerIrDetail.channelMissing,
+        );
       }
       _quietUntilUs = _clock.elapsedMicroseconds + chunk.gapAfterUs;
     }

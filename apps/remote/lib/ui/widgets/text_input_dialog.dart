@@ -4,17 +4,20 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../data/names.dart';
 import '../../l10n/app_localizations.dart';
 
 /// Shows the dialog; returns the trimmed text, or `null` if cancelled or
-/// empty.
+/// empty. The text never exceeds [maxLength] UTF-16 code units, the unit
+/// the database checks (an emoji is two or more), so a returned name always
+/// saves.
 Future<String?> showTextInputDialog(
   BuildContext context, {
   required String title,
   required String confirmLabel,
   String initial = '',
   String? fieldLabel,
-  int maxLength = 40,
+  int maxLength = maxNameLength,
 }) async {
   final v = await showDialog<String>(
     context: context,
@@ -52,6 +55,13 @@ class _TextInputDialog extends StatefulWidget {
 class _TextInputDialogState extends State<_TextInputDialog> {
   late final _c = TextEditingController(text: widget.initial);
 
+  bool get _fits => fitsName(_c.text, widget.maxLength);
+
+  void _submit() {
+    if (!_fits) return;
+    Navigator.pop(context, _c.text);
+  }
+
   @override
   void dispose() {
     _c.dispose();
@@ -61,14 +71,21 @@ class _TextInputDialogState extends State<_TextInputDialog> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
+    final used = _c.text.trim().length;
     return AlertDialog(
       title: Text(widget.title),
       content: TextField(
         controller: _c,
         autofocus: true,
-        maxLength: widget.maxLength,
-        decoration: InputDecoration(labelText: widget.fieldLabel),
-        onSubmitted: (v) => Navigator.pop(context, v),
+        onChanged: (_) => setState(() {}),
+        decoration: InputDecoration(
+          labelText: widget.fieldLabel,
+          // Counts what the database counts, not visible characters.
+          counterText: '$used/${widget.maxLength}',
+          errorText: _fits ? null : l.nameTooLong(widget.maxLength),
+          errorMaxLines: 3,
+        ),
+        onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(
@@ -76,7 +93,7 @@ class _TextInputDialogState extends State<_TextInputDialog> {
           child: Text(l.actionCancel),
         ),
         FilledButton(
-          onPressed: () => Navigator.pop(context, _c.text),
+          onPressed: _fits ? _submit : null,
           child: Text(widget.confirmLabel),
         ),
       ],

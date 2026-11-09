@@ -302,6 +302,16 @@ final class HubRepository {
         ),
       );
 
+  /// Moves a hub to a new address, keeping everything else (its pairing
+  /// token, name and when it was added).
+  Future<void> updateAddress(
+    String id, {
+    required String host,
+    required int port,
+  }) => (db.update(db.hubs)..where((h) => h.id.equals(id))).write(
+    HubsCompanion(host: Value(host), port: Value(port)),
+  );
+
   /// Deletes a hub.
   Future<void> delete(String id) =>
       (db.delete(db.hubs)..where((h) => h.id.equals(id))).go();

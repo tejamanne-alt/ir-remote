@@ -70,42 +70,58 @@ final class CodeDbLibrary implements CodeLibrary {
 }
 
 /// Loads the bundled library, or an empty one if anything goes wrong.
-Future<CodeLibrary> loadBundledCodeLibrary({AssetBundle? bundle}) async {
+///
+/// A new copy is written to a `.tmp` file and renamed into place; a failed
+/// write (a full disk) removes the partial file. Older copies are deleted
+/// only once the new copy has opened and passed the full hash check, so a
+/// failed update never leaves the app without the copy it had.
+/// [supportDirectory] replaces the app support directory (tests).
+Future<CodeLibrary> loadBundledCodeLibrary({
+  AssetBundle? bundle,
+  Future<Directory> Function()? supportDirectory,
+}) async {
   final assets = bundle ?? rootBundle;
   File? file;
+  File? tmp;
   try {
     final manifest = CodeDbManifest.parse(
       await assets.loadString('$_assetDir/codes.manifest.json'),
     );
-    final dir = await getApplicationSupportDirectory();
+    final dir = await (supportDirectory ?? getApplicationSupportDirectory)();
     file = File(
       '${dir.path}/codes-${manifest.fileSha256.substring(0, 16)}.sqlite',
     );
     var verification = CodeDbVerification.storedHashOnly;
     if (!file.existsSync()) {
       final data = await assets.load('$_assetDir/${manifest.file}');
-      final tmp = File('${file.path}.tmp');
+      tmp = File('${file.path}.tmp');
       await tmp.writeAsBytes(
         data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
         flush: true,
       );
       await tmp.rename(file.path);
+      tmp = null;
       verification = CodeDbVerification.full;
-      _deleteStaleCopies(dir, keep: file.path);
     }
     final db = CodeDb.open(
       file.path,
       expectedContentHash: manifest.contentSha256,
       verification: verification,
     );
+    if (verification == CodeDbVerification.full) {
+      _deleteStaleCopies(dir, keep: file.path);
+    }
     return CodeDbLibrary(db);
   } on Object catch (e) {
     debugPrint('code database unavailable: $e');
-    // A corrupt copy is removed so the next launch copies it again.
-    try {
-      if (file != null && file.existsSync()) file.deleteSync();
-    } on Object {
-      // ignore
+    // A partial or corrupt copy is removed so the next launch copies it
+    // again.
+    for (final f in [tmp, file]) {
+      try {
+        if (f != null && f.existsSync()) f.deleteSync();
+      } on Object {
+        // ignore
+      }
     }
     return InMemoryCodeLibrary.empty();
   }
@@ -116,7 +132,7 @@ void _deleteStaleCopies(Directory dir, {required String keep}) {
     for (final f in dir.listSync().whereType<File>()) {
       final name = f.uri.pathSegments.last;
       if (name.startsWith('codes-') &&
-          name.endsWith('.sqlite') &&
+          (name.endsWith('.sqlite') || name.endsWith('.sqlite.tmp')) &&
           f.path != keep) {
         f.deleteSync();
       }

@@ -52,12 +52,53 @@ abstract interface class BridgeDiscovery {
   Stream<List<DiscoveredBridge>> discover();
 }
 
+/// The part of an mDNS browser that [BonsoirBridgeDiscovery] drives, so the
+/// browse lifecycle can be tested without the platform plugin.
+abstract interface class MdnsBrowser {
+  /// Prepares the browser (platform channel set-up).
+  Future<void> initialize();
+
+  /// Browse events; available after [initialize].
+  Stream<BonsoirDiscoveryEvent>? get eventStream;
+
+  /// Starts browsing.
+  Future<void> start();
+
+  /// Stops browsing and releases the platform browser.
+  Future<void> stop();
+
+  /// Asks the platform to resolve [service]'s addresses.
+  void resolve(BonsoirService service);
+}
+
+final class _BonsoirBrowser implements MdnsBrowser {
+  _BonsoirBrowser(String type) : _d = BonsoirDiscovery(type: type);
+
+  final BonsoirDiscovery _d;
+
+  @override
+  Future<void> initialize() => _d.initialize();
+
+  @override
+  Stream<BonsoirDiscoveryEvent>? get eventStream => _d.eventStream;
+
+  @override
+  Future<void> start() => _d.start();
+
+  @override
+  Future<void> stop() => _d.stop();
+
+  @override
+  void resolve(BonsoirService service) => service.resolve(_d.serviceResolver);
+}
+
 /// Bonjour/NSD discovery of `_irbridge._tcp` through bonsoir. On iOS this
 /// uses the system Bonjour browser, which needs no multicast entitlement.
 final class BonsoirBridgeDiscovery implements BridgeDiscovery {
   /// Creates the discovery.
   const BonsoirBridgeDiscovery({
     this.network = const MethodChannel('irremote/network'),
+    this.browserFactory = _defaultBrowser,
   });
 
   /// Service type advertised by the bridge firmware.
@@ -66,12 +107,22 @@ final class BonsoirBridgeDiscovery implements BridgeDiscovery {
   /// Android multicast-lock channel.
   final MethodChannel network;
 
+  /// Creates the platform browser for [serviceType] (tests inject a fake).
+  final MdnsBrowser Function(String type) browserFactory;
+
+  static MdnsBrowser _defaultBrowser(String type) => _BonsoirBrowser(type);
+
   @override
   Stream<List<DiscoveredBridge>> discover() {
     late StreamController<List<DiscoveredBridge>> controller;
-    BonsoirDiscovery? discovery;
+    MdnsBrowser? browser;
     StreamSubscription<BonsoirDiscoveryEvent>? sub;
     final found = <String, DiscoveredBridge>{};
+    // Set when the listener cancels. onListen re-checks it after every
+    // await, because a cancel can arrive while it waits for the lock or the
+    // platform browser, after onCancel has already run.
+    var cancelled = false;
+    var locked = false;
 
     Future<void> lock({required bool on}) async {
       if (defaultTargetPlatform != TargetPlatform.android) return;
@@ -84,17 +135,46 @@ final class BonsoirBridgeDiscovery implements BridgeDiscovery {
       }
     }
 
+    // Stops whatever has been started so far. Each part is stopped once:
+    // a part started after an earlier call is stopped by the next one.
+    Future<void> stopAll() async {
+      await sub?.cancel();
+      sub = null;
+      final b = browser;
+      browser = null;
+      if (b != null) {
+        try {
+          await b.stop();
+        } on Object {
+          // already stopped
+        }
+      }
+      if (locked) {
+        locked = false;
+        await lock(on: false);
+      }
+    }
+
+    void emit(List<DiscoveredBridge> list) {
+      if (!cancelled && !controller.isClosed) controller.add(list);
+    }
+
     controller = StreamController<List<DiscoveredBridge>>(
       onListen: () async {
         try {
+          locked = true;
           await lock(on: true);
-          final d = BonsoirDiscovery(type: serviceType);
-          discovery = d;
+          if (cancelled) return await stopAll();
+          final d = browserFactory(serviceType);
           await d.initialize();
+          // Registered only once initialized, so it is never stopped
+          // half-way through its set-up.
+          browser = d;
+          if (cancelled) return await stopAll();
           sub = d.eventStream?.listen((event) {
             switch (event) {
               case BonsoirDiscoveryServiceFoundEvent():
-                event.service.resolve(d.serviceResolver);
+                d.resolve(event.service);
               case BonsoirDiscoveryServiceResolvedEvent():
                 final s = event.service;
                 final addresses = s.hostAddresses;
@@ -109,28 +189,28 @@ final class BonsoirBridgeDiscovery implements BridgeDiscovery {
                   port: s.port,
                   id: s.attributes['id'],
                 );
-                controller.add(found.values.toList());
+                emit(found.values.toList());
               case BonsoirDiscoveryServiceLostEvent():
                 found.remove(event.service.name);
-                controller.add(found.values.toList());
+                emit(found.values.toList());
               default:
                 break;
             }
           });
           await d.start();
-          controller.add(const []);
+          if (cancelled) return await stopAll();
+          emit(const []);
         } on Object catch (e) {
-          controller.addError(e);
+          if (cancelled || controller.isClosed) {
+            await stopAll();
+          } else {
+            controller.addError(e);
+          }
         }
       },
       onCancel: () async {
-        await sub?.cancel();
-        try {
-          await discovery?.stop();
-        } on Object {
-          // already stopped
-        }
-        await lock(on: false);
+        cancelled = true;
+        await stopAll();
         await controller.close();
       },
     );
@@ -271,7 +351,9 @@ final class HubService extends ChangeNotifier {
   }
 
   /// Adds an ESP32 bridge at [host]:[port] (unpaired) after reading its
-  /// info. Throws [BridgeException], [FormatException] or I/O errors.
+  /// info. A bridge that is already added keeps its record (ID, name and
+  /// pairing token); only its address moves to [host]:[port]. Throws
+  /// [BridgeException], [FormatException] or I/O errors.
   Future<HubRecord> addEspBridge(String host, {int port = 80}) async {
     if (!isLanHost(host)) throw const NotLanAddressException();
     final probe = EspBridgeTransport(
@@ -280,18 +362,52 @@ final class HubService extends ChangeNotifier {
     );
     try {
       final info = await probe.fetchInfo();
-      final record = HubRecord(
-        id: 'esp:${info.id}',
-        kind: TransportKind.espBridge,
-        name: info.name,
+      final id = 'esp:${info.id}';
+      final existing = await _stored(id);
+      if (existing == null) {
+        final record = HubRecord(
+          id: id,
+          kind: TransportKind.espBridge,
+          name: info.name,
+          host: host,
+          port: port,
+        );
+        await _save(record);
+        return record;
+      }
+      final moved = HubRecord(
+        id: existing.id,
+        kind: existing.kind,
+        name: existing.name,
         host: host,
         port: port,
+        token: existing.token,
+        extra: existing.extra,
       );
-      await _save(record);
-      return record;
+      await repo.updateAddress(existing.id, host: host, port: port);
+      await _register(moved);
+      return moved;
     } finally {
       await probe.dispose();
     }
+  }
+
+  Future<HubRecord?> _stored(String id) async {
+    for (final h in await repo.all()) {
+      if (h.id == id) return h;
+    }
+    return null;
+  }
+
+  /// The added hub [bridge] is, if any: the same bridge ID, or the same
+  /// address for a bridge that advertises no ID.
+  HubRecord? addedHubFor(DiscoveredBridge bridge) {
+    for (final h in _hubs) {
+      if (h.kind != TransportKind.espBridge) continue;
+      final id = bridge.id;
+      if (id != null ? h.id == 'esp:$id' : h.host == bridge.host) return h;
+    }
+    return null;
   }
 
   /// Pairs an ESP32 bridge while its button window is open. Throws
@@ -345,6 +461,10 @@ final class HubService extends ChangeNotifier {
 
   Future<void> _save(HubRecord record) async {
     await repo.upsert(record, _clock());
+    await _register(record);
+  }
+
+  Future<void> _register(HubRecord record) async {
     try {
       await registry.register(_factory(record));
     } on UnsupportedError {

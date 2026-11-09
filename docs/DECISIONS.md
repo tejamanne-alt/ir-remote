@@ -249,3 +249,40 @@ in ADR-025's glue.
   sends the header, so only the added frame is new.
 - `409 busy` now reaches a second sender, as BRIDGE_API always said.
 - Not verified on hardware yet (H2).
+
+## ADR-027: Remote buttons take part in the gesture arena
+
+**Context:** buttons sent on a raw pointer-down, so a scroll that started on
+a button transmitted, and could start hold-to-repeat (audit, app finding 1).
+**Decision:** `RemotePressGestureRecognizer` sends only once it wins the
+arena:
+- at pointer down when no scrollable competes;
+- inside a scrollable, at release, or once the finger has stayed within
+  the touch slop for `remotePressDelay` (40 ms).
+
+40 ms rather than Flutter's 100 ms `kPressTimeout`, to keep the 50 ms
+tap-to-transmit budget. A test pins it below 50 ms.
+**Consequences:** a drag that starts slower than 40 ms counts as a press.
+Moving past the slop after that ends the press. M8 measures the budget on
+devices.
+
+## ADR-028: Hold-to-repeat follows the signal's RepeatSpec
+
+**Context:** repeats waited a fixed 350 ms before the first repeat, and
+dropped the repeat gap. So NEC's first ditto came about 356 ms late instead
+of 40 ms, and Sony repeated every 119 ms instead of 45 ms.
+**Decision:**
+- The first repeat goes `leadInGapUs` after the frame, then one every
+  `gapUs`.
+- Repeat frames carry their gap, so transports keep the period.
+- Repeats are handed to the transport in batches of about 100 ms of air
+  time.
+- The 300-frame cap and release-on-dispose stay.
+- During matching, RC5/RC6 toggle state is kept per unsaved device, and the
+  saved remote starts from it (ADR-008 now applies before saving too).
+
+**Consequences:**
+- A release is noticed at the next batch boundary, which is up to two extra
+  Sony frames.
+- A press longer than about 210 ms sends one NEC ditto, as a real remote
+  does.

@@ -1875,6 +1875,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Imported'**
   String get keySourceImported;
+
+  /// No description provided for @nameTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Too long: use at most {max} characters (emoji count as two or more).'**
+  String nameTooLong(int max);
+
+  /// No description provided for @nameSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'That name couldn\'t be saved. Try a shorter one.'**
+  String get nameSaveFailed;
+
+  /// No description provided for @learnEnded.
+  ///
+  /// In en, this message translates to:
+  /// **'The hub stopped listening before a signal arrived. Try again.'**
+  String get learnEnded;
+
+  /// No description provided for @transportThisPhone.
+  ///
+  /// In en, this message translates to:
+  /// **'This phone'**
+  String get transportThisPhone;
+
+  /// No description provided for @resultBuiltInNoEmitter.
+  ///
+  /// In en, this message translates to:
+  /// **'This phone has no IR blaster.'**
+  String get resultBuiltInNoEmitter;
+
+  /// No description provided for @resultBuiltInPermission.
+  ///
+  /// In en, this message translates to:
+  /// **'This phone didn\'t allow the app to use its IR blaster.'**
+  String get resultBuiltInPermission;
+
+  /// No description provided for @resultBuiltInUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This phone\'s IR blaster isn\'t available in this version of the app.'**
+  String get resultBuiltInUnavailable;
+
+  /// No description provided for @importNotText.
+  ///
+  /// In en, this message translates to:
+  /// **'it isn\'t a text file (UTF-8).'**
+  String get importNotText;
+
+  /// No description provided for @importTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'the file is larger than 5 MB.'**
+  String get importTooLarge;
+
+  /// No description provided for @importUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'the file couldn\'t be read.'**
+  String get importUnreadable;
+
+  /// No description provided for @hubAlreadyAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'{host} · Already added'**
+  String hubAlreadyAdded(String host);
+
+  /// No description provided for @hubUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}\'s address is updated.'**
+  String hubUpdated(String name);
+
+  /// No description provided for @backupExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t create the backup file. Try again.'**
+  String get backupExportFailed;
+
+  /// No description provided for @backupRestoreFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t restore the backup. Nothing was changed.'**
+  String get backupRestoreFailed;
 }
 
 class _AppLocalizationsDelegate

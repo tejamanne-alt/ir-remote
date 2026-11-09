@@ -79,11 +79,20 @@ InMemoryCodeLibrary testLibrary() => InMemoryCodeLibrary(
 
 final class FakeFileIo implements FileIo {
   String? nextPick;
+
+  /// When set, the next pick throws this instead of returning [nextPick].
+  Object? nextError;
   final List<(String, String)> shared = [];
 
   @override
-  Future<String?> pickText({List<String> extensions = const []}) async =>
-      nextPick;
+  Future<String?> pickText({List<String> extensions = const []}) async {
+    final e = nextError;
+    if (e != null) {
+      nextError = null;
+      throw e;
+    }
+    return nextPick;
+  }
 
   @override
   Future<void> shareText(String name, String text) async =>
@@ -112,6 +121,7 @@ Future<(AppServices, SimulatedTransport)> buildServices({
   BridgeDiscovery? discovery,
   bool withSimulator = true,
   FileIo? files,
+  List<IrTransport> extraTransports = const [],
 }) async {
   final sim = SimulatedTransport();
   final services = await AppServices.create(
@@ -120,7 +130,7 @@ Future<(AppServices, SimulatedTransport)> buildServices({
     emitter: emitter,
     platform: platform,
     discovery: discovery ?? FakeDiscovery(),
-    extraTransports: [if (withSimulator) sim],
+    extraTransports: [...extraTransports, if (withSimulator) sim],
     files: files ?? FakeFileIo(),
   );
   return (services, sim);

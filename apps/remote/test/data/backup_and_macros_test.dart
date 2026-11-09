@@ -10,9 +10,11 @@ import 'package:irremote/data/backup.dart';
 import 'package:irremote/data/database.dart';
 import 'package:irremote/data/macros.dart';
 import 'package:irremote/data/models.dart';
+import 'package:irremote/data/names.dart';
 import 'package:irremote/data/repositories.dart';
 import 'package:irremote/services/macro_runner.dart';
 import 'package:irremote/services/send_service.dart';
+import 'package:irremote/ui/learn/flipper_import.dart';
 
 import '../helpers.dart';
 
@@ -209,6 +211,113 @@ void main() {
         expect(await codec.export(), before);
       },
     );
+
+    test('duplicate room, hub or macro IDs are a FormatException', () async {
+      final db = memoryDb();
+      addTearDown(db.close);
+      await _seed(db);
+      final codec = BackupCodec(db);
+      final before = await codec.export();
+      final good = jsonDecode(before) as Map<String, Object?>;
+      List<Object?> twice(String k) => [
+        (good[k]! as List).first,
+        (good[k]! as List).first,
+      ];
+      for (final k in ['rooms', 'hubs', 'macros']) {
+        await expectLater(
+          codec.import(jsonEncode({...good, k: twice(k)})),
+          throwsFormatException,
+          reason: 'duplicate $k',
+        );
+      }
+      expect(await codec.export(), before);
+    });
+
+    test('a Flipper button with a 90-character name survives a backup '
+        'round trip', () async {
+      final db = memoryDb();
+      addTearDown(db.close);
+      final devices = DeviceRepository(db);
+      await devices.save(
+        SavedDevice(
+          id: 'g',
+          name: 'Imported',
+          category: DeviceCategory.generic,
+          createdAt: DateTime.utc(2026, 11, 9),
+        ),
+      );
+      final name = 'Living room lights ${'very ' * 14}long'.substring(0, 90);
+      expect(name.length, 90);
+      final file =
+          'Filetype: IR signals file\nVersion: 1\n#\nname: $name\n'
+          'type: parsed\nprotocol: NEC\naddress: 04 00 00 00\n'
+          'command: 08 00 00 00\n';
+      for (final k in keysFromFlipper(FlipperIr.parse(file))) {
+        expect(k.key.length, lessThanOrEqualTo(maxKeyNameLength));
+        await devices.upsertKey('g', k);
+      }
+      final text = await BackupCodec(db).export();
+      final fresh = memoryDb();
+      addTearDown(fresh.close);
+      await BackupCodec(fresh).import(text);
+      final g = (await DeviceRepository(fresh).load('g'))!;
+      expect(g.keys.values.single.label, name);
+      expect(
+        g.keys.values.single.signal,
+        const Nec1().encode({'D': 4, 'F': 8}),
+      );
+      expect(await BackupCodec(fresh).export(), text);
+    });
+
+    test('names an older version stored uncut still restore, and macros '
+        'follow them', () async {
+      final db = memoryDb();
+      addTearDown(db.close);
+      final devices = DeviceRepository(db);
+      final long = 'custom:${'x' * 120}';
+      final long2 = 'custom:${'x' * 121}';
+      final signal = const Nec1().encode({'D': 4, 'F': 8});
+      await devices.save(
+        SavedDevice(
+          id: 'g',
+          name: 'Old',
+          category: DeviceCategory.generic,
+          createdAt: DateTime.utc(2026, 11, 9),
+          keys: {
+            for (final k in [long, long2])
+              k: SavedKey(
+                key: k,
+                label: 'y' * 2000,
+                signal: signal,
+                source: KeySource.imported,
+              ),
+          },
+        ),
+      );
+      await MacroRepository(db).save(
+        Macro(
+          id: 'm',
+          name: 'M',
+          createdAt: DateTime.utc(2026),
+          steps: [
+            MacroStep(deviceId: 'g', key: long),
+            MacroStep(deviceId: 'g', key: long2),
+          ],
+        ),
+      );
+      final text = await BackupCodec(db).export();
+      final fresh = memoryDb();
+      addTearDown(fresh.close);
+      await BackupCodec(fresh).import(text);
+      final g = (await DeviceRepository(fresh).load('g'))!;
+      expect(g.keys.length, 2);
+      for (final k in g.keys.values) {
+        expect(k.key.length, lessThanOrEqualTo(maxKeyNameLength));
+        expect(k.label!.length, maxKeyLabelLength);
+      }
+      final steps = (await MacroRepository(fresh).all()).single.steps;
+      expect(steps.map((s) => s.key).toSet(), g.keys.keys.toSet());
+    });
 
     test('survives 2,000 mutated backups with only FormatException', () async {
       final db = memoryDb();

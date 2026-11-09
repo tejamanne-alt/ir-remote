@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ir_core/ir_core.dart';
@@ -10,8 +12,12 @@ import 'package:irremote/ui/ac/ac_panel.dart';
 import 'package:irremote/ui/hubs/hubs_screen.dart';
 import 'package:irremote/ui/remote/remote_screen.dart';
 import 'package:irremote/ui/settings/settings_screen.dart';
+import 'package:irremote/ui/widgets/remote_button.dart';
 
 import 'helpers.dart';
+
+/// The real HTTP client, instead of flutter_test's always-400 mock.
+final class _RealHttp extends HttpOverrides {}
 
 Future<SavedDevice> _saveTv(
   AppServices services, {
@@ -208,6 +214,116 @@ void main() {
       await disposeServices(tester, s);
     });
 
+    testWidgets('a drag that starts on a button scrolls and sends nothing', (
+      tester,
+    ) async {
+      final (s, sim) = await buildServices();
+      await tester.runAsync(() => _saveTv(s, id: 'lg', set: 'lg-a'));
+      await pumpApp(tester, s);
+      await _openRemote(tester, 'lg');
+      final volUp = find.bySemanticsLabel('Volume up').first;
+      await tester.drag(volUp, const Offset(0, -300));
+      await settle(tester);
+      expect(sim.sent, isEmpty);
+
+      // A drag that starts after a short pause still belongs to the scroll.
+      final gesture = await tester.startGesture(tester.getCenter(volUp));
+      await tester.pump(remotePressDelay ~/ 2);
+      for (var i = 0; i < 10; i++) {
+        await gesture.moveBy(const Offset(0, -20));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      // Holding still after the scroll has won sends nothing either.
+      await tester.pump(const Duration(seconds: 1));
+      await gesture.up();
+      await settle(tester);
+      expect(sim.sent, isEmpty);
+
+      // A plain tap still sends exactly one frame.
+      await tester.tap(find.bySemanticsLabel('Volume up').first);
+      await settle(tester);
+      expect(sim.sent.length, 1);
+      expect(sim.sent.single.signal, const Nec1().encode({'D': 4, 'F': 2}));
+
+      // Latency budget: a press that stays put starts sending once the
+      // press delay has passed, before the finger lifts.
+      final press = await tester.startGesture(
+        tester.getCenter(find.bySemanticsLabel('Volume up').first),
+      );
+      await tester.pump(remotePressDelay + const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(sim.sent.length, 2, reason: 'sent while the finger is down');
+      await press.up();
+      await settle(tester);
+      expect(remotePressDelay, lessThan(const Duration(milliseconds: 50)));
+      await disposeServices(tester, s);
+    });
+
+    testWidgets('every key of a TV, box or projector appears exactly once', (
+      tester,
+    ) async {
+      tester.view
+        ..physicalSize = const Size(1000, 6000)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final (s, _) = await buildServices();
+      const placed = [
+        Keys.power, Keys.input, Keys.mute, Keys.volUp, Keys.volDown, //
+        Keys.chUp, Keys.chDown, Keys.up, Keys.down, Keys.left, Keys.right, //
+        Keys.ok, Keys.back, Keys.home, Keys.menu, Keys.guide, Keys.info, //
+        Keys.exit, Keys.red, Keys.green, Keys.yellow, Keys.blue, //
+        Keys.lastChannel, Keys.focusIn, Keys.focusOut, Keys.keystoneUp, //
+        Keys.keystoneDown, Keys.play, 'custom:Netflix', ...Keys.digits,
+      ];
+      for (final c in [
+        DeviceCategory.tv,
+        DeviceCategory.setTopBox,
+        DeviceCategory.projector,
+      ]) {
+        await tester.runAsync(
+          () => s.devices.save(
+            SavedDevice(
+              id: c.name,
+              name: c.name,
+              category: c,
+              createdAt: DateTime.utc(2026, 11, 9),
+              keys: {
+                for (final (i, k) in placed.indexed)
+                  k: snapshotKey(
+                    k,
+                    ProtocolKeyCode('NEC1', {'D': 1, 'F': i}),
+                    position: i,
+                  ),
+              },
+            ),
+          ),
+        );
+      }
+      await pumpApp(tester, s);
+      for (final c in [
+        DeviceCategory.tv,
+        DeviceCategory.setTopBox,
+        DeviceCategory.projector,
+      ]) {
+        await _openRemote(tester, c.name);
+        final numbers = find.text('Numbers');
+        if (numbers.evaluate().isNotEmpty) {
+          await tester.tap(numbers);
+          await settle(tester);
+        }
+        for (final k in placed) {
+          expect(
+            find.byWidgetPredicate((w) => w is RemoteButton && w.keyName == k),
+            findsOneWidget,
+            reason: '$k on the ${c.name} remote',
+          );
+        }
+        tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+        await settle(tester);
+      }
+      await disposeServices(tester, s);
+    });
+
     testWidgets('power never auto-repeats while held', (tester) async {
       final (s, sim) = await buildServices();
       await tester.runAsync(() => _saveTv(s, id: 'lg', set: 'lg-a'));
@@ -269,6 +385,96 @@ void main() {
         find.text('Enter an IPv4 address such as 192.168.1.40.'),
         findsOneWidget,
       );
+      await disposeServices(tester, s);
+    });
+
+    testWidgets('bridges that are already added are marked in discovery', (
+      tester,
+    ) async {
+      final discovery = FakeDiscovery();
+      final (s, _) = await buildServices(discovery: discovery);
+      // In the test zone: the registry's futures belong to it.
+      await s.hubs.saveRecord(
+        const HubRecord(
+          id: 'esp:a1b2c3d4e5f6',
+          kind: TransportKind.espBridge,
+          name: 'Hall bridge',
+          host: '192.168.1.40',
+          port: 80,
+        ),
+      );
+      await pumpApp(tester, s);
+      final nav = tester.state<NavigatorState>(find.byType(Navigator).first);
+      nav.push(MaterialPageRoute<void>(builder: (_) => const AddHubScreen()));
+      await settle(tester);
+      discovery.controller.add(const [
+        DiscoveredBridge(
+          name: 'Hall bridge',
+          host: '192.168.1.41',
+          port: 80,
+          id: 'a1b2c3d4e5f6',
+        ),
+        DiscoveredBridge(
+          name: 'Kitchen bridge',
+          host: '192.168.1.42',
+          port: 80,
+          id: '0a0b0c0d0e0f',
+        ),
+      ]);
+      await settle(tester);
+      expect(find.textContaining('Already added'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Hall bridge'),
+          matching: find.textContaining('Already added'),
+        ),
+        findsOneWidget,
+      );
+      await disposeServices(tester, s);
+    });
+
+    testWidgets('leaving the pairing screen while Pair is pending is safe', (
+      tester,
+    ) async {
+      final (s, _) = await buildServices();
+      await pumpApp(tester, s);
+      // A loopback port with nothing listening: the request fails, but only
+      // once real I/O runs, after the screen has gone.
+      final closed = await tester.runAsync(() async {
+        final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        final port = socket.port;
+        await socket.close();
+        return port;
+      });
+      final nav = tester.state<NavigatorState>(find.byType(Navigator).first);
+      nav.push(
+        MaterialPageRoute<void>(
+          builder: (_) => PairBridgeScreen(
+            hub: HubRecord(
+              id: 'esp:a1',
+              kind: TransportKind.espBridge,
+              name: 'Hall',
+              host: '127.0.0.1',
+              port: closed!,
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+      await HttpOverrides.runWithHttpOverrides(() async {
+        await tester.tap(find.text('Pair'));
+        await tester.pump();
+      }, _RealHttp());
+      // Finish the pop on the fake clock only, so the screen is disposed
+      // before real I/O lets the request fail.
+      nav.pop();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(PairBridgeScreen), findsNothing);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await settle(tester);
       await disposeServices(tester, s);
     });
 

@@ -1016,4 +1016,58 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get keySourceImported => 'Imported';
+
+  @override
+  String nameTooLong(int max) {
+    return 'Too long: use at most $max characters (emoji count as two or more).';
+  }
+
+  @override
+  String get nameSaveFailed =>
+      'That name couldn\'t be saved. Try a shorter one.';
+
+  @override
+  String get learnEnded =>
+      'The hub stopped listening before a signal arrived. Try again.';
+
+  @override
+  String get transportThisPhone => 'This phone';
+
+  @override
+  String get resultBuiltInNoEmitter => 'This phone has no IR blaster.';
+
+  @override
+  String get resultBuiltInPermission =>
+      'This phone didn\'t allow the app to use its IR blaster.';
+
+  @override
+  String get resultBuiltInUnavailable =>
+      'This phone\'s IR blaster isn\'t available in this version of the app.';
+
+  @override
+  String get importNotText => 'it isn\'t a text file (UTF-8).';
+
+  @override
+  String get importTooLarge => 'the file is larger than 5 MB.';
+
+  @override
+  String get importUnreadable => 'the file couldn\'t be read.';
+
+  @override
+  String hubAlreadyAdded(String host) {
+    return '$host · Already added';
+  }
+
+  @override
+  String hubUpdated(String name) {
+    return '$name\'s address is updated.';
+  }
+
+  @override
+  String get backupExportFailed =>
+      'Couldn\'t create the backup file. Try again.';
+
+  @override
+  String get backupRestoreFailed =>
+      'Couldn\'t restore the backup. Nothing was changed.';
 }

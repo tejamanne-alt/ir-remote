@@ -1,6 +1,7 @@
 /// Picking and sharing files, behind an interface so screens are testable.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
@@ -22,10 +23,30 @@ final class FileTooLargeException implements Exception {
   String toString() => 'The file is larger than 5 MB.';
 }
 
+/// Thrown when a picked file is not UTF-8 text. It is a [FormatException],
+/// so every import path reports it as a file-format error.
+final class NotTextFileException extends FormatException {
+  /// Creates the exception.
+  const NotTextFileException() : super('the file is not UTF-8 text');
+}
+
+/// Decodes a picked file's [bytes] as UTF-8 (a leading byte-order mark is
+/// dropped). Throws [NotTextFileException] for anything else.
+String decodeImportText(List<int> bytes) {
+  final String text;
+  try {
+    text = utf8.decode(bytes);
+  } on FormatException {
+    throw const NotTextFileException();
+  }
+  return text.startsWith('\uFEFF') ? text.substring(1) : text;
+}
+
 /// Platform file operations.
 abstract interface class FileIo {
   /// Lets the user pick a text file; returns its contents, or `null` if
-  /// cancelled. Throws [FileTooLargeException] above [maxImportBytes].
+  /// cancelled. Throws [FileTooLargeException] above [maxImportBytes] and
+  /// [NotTextFileException] when the file is not UTF-8 text.
   Future<String?> pickText({List<String> extensions = const []});
 
   /// Writes [text] to a temporary file called [name] and opens the share
@@ -56,7 +77,9 @@ final class PlatformFileIo implements FileIo {
     if (file == null) return null;
     final size = await file.length();
     if (size > maxImportBytes) throw FileTooLargeException(size);
-    return file.readAsString();
+    // Bytes, then a checked decode: readAsString reports a non-UTF-8 file
+    // as a FileSystemException that import paths would not expect.
+    return decodeImportText(await file.readAsBytes());
   }
 
   @override

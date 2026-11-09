@@ -9,23 +9,81 @@ import 'package:ir_core/ir_core.dart';
 import 'package:ir_transports/ir_transports.dart';
 
 import '../../data/models.dart';
+import '../../data/names.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import '../hubs/hubs_screen.dart';
 import '../labels.dart';
 import '../widgets/remote_button.dart';
 
+/// Tolerance for [reproducesFirstFrame]: the one the decoders use.
+const TimingTolerance captureTolerance = TimingTolerance();
+
+/// Whether re-encoding [decoded] gives back the first frame of [capture]:
+/// the same number of durations, each within [captureTolerance].
+///
+/// The capture's first frame ends at its first space longer than any space
+/// the encoded frame has (allowing for the tolerance), which can only be an
+/// inter-frame gap, or at the end of the capture. A decoder that matched
+/// only the start of a longer frame (an AC state frame that begins like an
+/// NEC code, for example) therefore never turns the capture into a
+/// different, shorter code.
+bool reproducesFirstFrame(IrSignal capture, DecodedCommand decoded) {
+  final p = ProtocolRegistry.standard.lookup(decoded.protocolId);
+  if (p == null) return false;
+  final List<int> encoded;
+  try {
+    encoded = p.encodeNormalized(p.normalize(decoded.params)).durationsUs;
+  } on Object {
+    return false;
+  }
+  var longestSpace = 0;
+  for (var i = 1; i < encoded.length; i += 2) {
+    if (encoded[i] > longestSpace) longestSpace = encoded[i];
+  }
+  final t = captureTolerance;
+  final gapAbove =
+      longestSpace +
+      (longestSpace * t.relative > t.absoluteUs
+          ? longestSpace * t.relative
+          : t.absoluteUs);
+  final d = capture.durationsUs;
+  var frameLength = d.length;
+  for (var i = 1; i < d.length; i += 2) {
+    if (d[i] > gapAbove) {
+      frameLength = i;
+      break;
+    }
+  }
+  if (frameLength != encoded.length) return false;
+  for (var i = 0; i < encoded.length; i++) {
+    if (!t.matches(d[i], encoded[i])) return false;
+  }
+  return true;
+}
+
+/// The protocol a capture is saved as, or `null` to keep it raw: only a full
+/// frame (not a lone repeat) that [reproducesFirstFrame].
+DecodedCommand? decodeCapture(IrSignal capture) {
+  final decoded = ProtocolRegistry.standard.identify(capture.durationsUs);
+  if (decoded == null || decoded.isRepeatFrame) return null;
+  return reproducesFirstFrame(capture, decoded) ? decoded : null;
+}
+
 /// Turns a capture into a saved key: re-encoded through the codec when the
-/// protocol is recognised (clean timings and the protocol's repeat rule),
-/// otherwise the raw capture.
+/// protocol is recognised and re-encoding reproduces the capture (clean
+/// timings and the protocol's repeat rule), otherwise the raw capture.
+/// [keyName] and [label] are cut to what a backup restores.
 SavedKey keyFromCapture(
   String keyName,
   String? label,
   IrSignal capture, {
   int position = 0,
 }) {
-  final decoded = ProtocolRegistry.standard.identify(capture.durationsUs);
-  if (decoded != null && !decoded.isRepeatFrame) {
+  keyName = boundedKeyName(keyName);
+  label = boundedLabel(label);
+  final decoded = decodeCapture(capture);
+  if (decoded != null) {
     final p = ProtocolRegistry.standard.require(decoded.protocolId);
     final base = snapshotKey(
       keyName,
@@ -53,7 +111,7 @@ SavedKey keyFromCapture(
 }
 
 /// Maps a user-typed button name onto the key vocabulary.
-String keyNameFor(String label) => Keys.normalize(label);
+String keyNameFor(String label) => customKeyName(label);
 
 enum _Phase { idle, waiting, captured, failed }
 
@@ -75,6 +133,7 @@ class _LearnScreenState extends State<LearnScreen> {
   StreamSubscription<LearnedSignal>? _sub;
   IrSignal? _capture;
   String? _error;
+  bool _ended = false;
   String? _decodedName;
 
   IrTransport? _learner(AppServices s) {
@@ -97,21 +156,39 @@ class _LearnScreenState extends State<LearnScreen> {
       _error = null;
     });
     _sub?.cancel();
-    _sub = stream.listen(
+    late final StreamSubscription<LearnedSignal> sub;
+    sub = stream.listen(
       (c) {
-        final d = ProtocolRegistry.standard.identify(c.signal.durationsUs);
+        if (!mounted || _sub != sub) return;
+        final d = decodeCapture(c.signal);
         setState(() {
           _capture = c.signal;
-          _decodedName = d != null && !d.isRepeatFrame ? d.protocolId : null;
+          _decodedName = d?.protocolId;
           _phase = _Phase.captured;
         });
-        _sub?.cancel();
+        _sub = null;
+        sub.cancel();
       },
-      onError: (Object e) => setState(() {
-        _phase = _Phase.failed;
-        _error = e is LearnTimeoutException ? null : '$e';
-      }),
+      onError: (Object e) {
+        if (!mounted || _sub != sub) return;
+        setState(() {
+          _phase = _Phase.failed;
+          _ended = false;
+          _error = e is LearnTimeoutException ? null : '$e';
+        });
+      },
+      // The hub left learn mode (bridge `learn_stopped`, a closed socket)
+      // before anything arrived: say so and offer a retry, never spin.
+      onDone: () {
+        if (!mounted || _sub != sub || _phase != _Phase.waiting) return;
+        setState(() {
+          _phase = _Phase.failed;
+          _ended = true;
+          _error = null;
+        });
+      },
     );
+    _sub = sub;
   }
 
   Future<void> _save() async {
@@ -221,7 +298,13 @@ class _LearnScreenState extends State<LearnScreen> {
     _Phase.failed => [
       Semantics(
         liveRegion: true,
-        child: Text(_error == null ? l.learnTimeout : l.learnError(_error!)),
+        child: Text(
+          _ended
+              ? l.learnEnded
+              : _error == null
+              ? l.learnTimeout
+              : l.learnError(_error!),
+        ),
       ),
       const SizedBox(height: 12),
       FilledButton(onPressed: _start, child: Text(l.learnRetry)),

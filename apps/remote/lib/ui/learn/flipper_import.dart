@@ -5,9 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:ir_core/ir_core.dart';
 
 import '../../data/models.dart';
+import '../../data/names.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import '../../services/file_io.dart';
+import '../labels.dart';
 import '../widgets/remote_button.dart';
 
 /// Converts parsed Flipper signals into saved keys, numbering positions
@@ -20,14 +22,15 @@ List<SavedKey> keysFromFlipper(
   final seen = <String>{};
   var pos = startPosition;
   for (final s in result.signals) {
-    final name = Keys.normalize(s.name);
+    // Bounded so a backup of this remote always restores.
+    final name = customKeyName(s.name);
     if (!seen.add(name)) continue; // first occurrence wins
     try {
       final k = snapshotKey(name, s.code, position: pos);
       out.add(
         SavedKey(
           key: k.key,
-          label: s.name,
+          label: boundedLabel(s.name),
           signal: k.signal,
           toggled: k.toggled,
           source: KeySource.imported,
@@ -44,7 +47,8 @@ List<SavedKey> keysFromFlipper(
 }
 
 /// Lets the user pick a `.ir` file and adds its buttons to [deviceId].
-/// Returns the number of buttons imported, or `null` if cancelled.
+/// Returns the number of buttons imported, or `null` if cancelled or the
+/// import failed (the reason is shown). Never throws.
 Future<int?> importFlipperInto(
   BuildContext context,
   String deviceId, {
@@ -66,10 +70,8 @@ Future<int?> importFlipperInto(
     }
     if (context.mounted) showSendError(context, l.importedKeys(keys.length));
     return keys.length;
-  } on FormatException catch (e) {
-    if (context.mounted) showSendError(context, l.importFailed(e.message));
-  } on FileTooLargeException catch (e) {
-    if (context.mounted) showSendError(context, l.importFailed('$e'));
+  } on Object catch (e) {
+    if (context.mounted) showSendError(context, importErrorMessage(l, e));
   }
   return null;
 }

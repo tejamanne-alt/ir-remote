@@ -15,6 +15,22 @@ final class _EmptyBundle extends CachingAssetBundle {
       Future.error(FlutterError('no asset $key'));
 }
 
+/// Serves the real manifest and the given database bytes.
+final class _Bundle extends CachingAssetBundle {
+  _Bundle(this.db);
+
+  final List<int> db;
+
+  @override
+  Future<ByteData> load(String key) async {
+    final bytes = key.endsWith('.json')
+        ? File('../../packages/code_db/assets/codes.manifest.json')
+              .readAsBytesSync()
+        : Uint8List.fromList(db);
+    return ByteData.sublistView(Uint8List.fromList(bytes));
+  }
+}
+
 void main() {
   late CodeDbLibrary lib;
   setUpAll(() {
@@ -83,4 +99,64 @@ void main() {
       expect(l.brands(DeviceCategory.tv), isEmpty);
     },
   );
+
+  group('copying the bundled database', () {
+    late Directory dir;
+    late String target;
+    setUp(() {
+      dir = Directory.systemTemp.createTempSync('codes');
+      final manifest = CodeDbManifest.parse(
+        File('../../packages/code_db/assets/codes.manifest.json')
+            .readAsStringSync(),
+      );
+      target =
+          '${dir.path}/codes-${manifest.fileSha256.substring(0, 16)}.sqlite';
+      File('${dir.path}/codes-0000000000000000.sqlite')
+          .writeAsStringSync('older copy');
+    });
+    tearDown(() => dir.deleteSync(recursive: true));
+    final real = File('../../packages/code_db/assets/codes.sqlite')
+        .readAsBytesSync();
+
+    List<String> names() =>
+        [for (final f in dir.listSync()) f.uri.pathSegments.last]..sort();
+
+    test('a copy that fails verification keeps the older copy', () async {
+      final damaged = [...real]..[real.length ~/ 2] ^= 0xff;
+      final l = await loadBundledCodeLibrary(
+        bundle: _Bundle(damaged),
+        supportDirectory: () async => dir,
+      );
+      expect(l, isA<InMemoryCodeLibrary>());
+      expect(names(), ['codes-0000000000000000.sqlite']);
+    });
+
+    test('a failed write leaves no partial .tmp behind', () async {
+      // The final path is taken by a directory, so the rename fails after
+      // the .tmp has been written.
+      Directory(target).createSync();
+      final l = await loadBundledCodeLibrary(
+        bundle: _Bundle(real),
+        supportDirectory: () async => dir,
+      );
+      expect(l, isA<InMemoryCodeLibrary>());
+      expect(names().where((n) => n.endsWith('.tmp')), isEmpty);
+      expect(
+        File('${dir.path}/codes-0000000000000000.sqlite').existsSync(),
+        isTrue,
+      );
+    });
+
+    test('a verified copy replaces the older ones', () async {
+      File('${dir.path}/codes-1111111111111111.sqlite.tmp')
+          .writeAsStringSync('partial');
+      final l = await loadBundledCodeLibrary(
+        bundle: _Bundle(real),
+        supportDirectory: () async => dir,
+      );
+      expect(l, isA<CodeDbLibrary>());
+      (l as CodeDbLibrary).db.close();
+      expect(names(), [target.split('/').last]);
+    });
+  });
 }

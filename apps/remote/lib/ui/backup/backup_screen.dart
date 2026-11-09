@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import '../../data/backup.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
-import '../../services/file_io.dart';
+import '../labels.dart';
 
 /// Export and import.
 class BackupScreen extends StatefulWidget {
@@ -30,8 +30,8 @@ class _BackupScreenState extends State<BackupScreen> {
       final stamp = DateTime.now().toIso8601String().substring(0, 10);
       await s.files.shareText('irremote-backup-$stamp.json', text);
       if (mounted) setState(() => _message = l.backupExported);
-    } on Object catch (e) {
-      if (mounted) setState(() => _message = l.importFailed('$e'));
+    } on Object {
+      if (mounted) setState(() => _message = l.backupExportFailed);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -43,8 +43,8 @@ class _BackupScreenState extends State<BackupScreen> {
     String? text;
     try {
       text = await s.files.pickText(extensions: const ['json']);
-    } on FileTooLargeException catch (e) {
-      setState(() => _message = l.importFailed('$e'));
+    } on Object catch (e) {
+      if (mounted) setState(() => _message = importErrorMessage(l, e));
       return;
     }
     if (text == null || !mounted) return;
@@ -65,14 +65,22 @@ class _BackupScreenState extends State<BackupScreen> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
     setState(() => _busy = true);
     try {
       await BackupCodec(s.db).import(text);
       await s.reloadAfterRestore();
       if (mounted) setState(() => _message = l.backupRestored);
-    } on FormatException catch (e) {
-      if (mounted) setState(() => _message = l.importFailed(e.message));
+    } on Object catch (e) {
+      // FormatException for anything the validator rejects; anything else
+      // (a database error) is reported too instead of failing silently.
+      if (mounted) {
+        setState(
+          () => _message = e is FormatException
+              ? importErrorMessage(l, e)
+              : l.backupRestoreFailed,
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

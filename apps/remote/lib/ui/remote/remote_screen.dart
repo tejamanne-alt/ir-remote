@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:ir_core/ir_core.dart';
 
 import '../../data/models.dart';
+import '../../data/names.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/app_services.dart';
 import '../ac/ac_panel.dart';
@@ -74,12 +75,18 @@ class RemoteLayout extends StatelessWidget {
         ),
       );
     }
+    // Every key a section places, collected here as the sections are
+    // created (not in their build methods, which run later), so "More keys"
+    // lists only what no section shows.
     final shown = <String>{};
     final sections = <Widget>[];
-    Widget row(List<String> keys) {
+    Widget placed(Iterable<String> keys, Widget section) {
       shown.addAll(keys);
-      return _KeyRow(device: device, keys: keys);
+      return section;
     }
+
+    Widget row(List<String> keys) =>
+        placed(keys, _KeyRow(device: device, keys: keys));
 
     final c = device.category;
     final hasDigits = Keys.digits.any(device.keys.containsKey);
@@ -96,18 +103,26 @@ class RemoteLayout extends StatelessWidget {
             ]),
           )
           ..add(
-            _VolumeChannel(
-              device: device,
-              shown: shown,
-              channel: c != DeviceCategory.projector,
+            placed(
+              [
+                Keys.volUp,
+                Keys.volDown,
+                if (c != DeviceCategory.projector) ...[Keys.chUp, Keys.chDown],
+              ],
+              _VolumeChannel(
+                device: device,
+                channel: c != DeviceCategory.projector,
+              ),
             ),
           )
-          ..add(_DPad(device: device, shown: shown))
+          ..add(placed(_DPad.keys, _DPad(device: device)))
           ..add(row([Keys.back, Keys.home, Keys.menu]));
         if (c == DeviceCategory.setTopBox) {
           sections
             ..add(row([Keys.guide, Keys.info, Keys.exit]))
-            ..add(_ColourKeys(device: device, shown: shown));
+            ..add(
+              placed(_ColourKeys.colours.keys, _ColourKeys(device: device)),
+            );
         }
         if (c == DeviceCategory.projector) {
           sections
@@ -115,7 +130,12 @@ class RemoteLayout extends StatelessWidget {
             ..add(row([Keys.keystoneDown, Keys.keystoneUp]));
         }
         if (hasDigits && c != DeviceCategory.projector) {
-          sections.add(_NumberPad(device: device, shown: shown));
+          sections.add(
+            placed([
+              ...Keys.digits,
+              Keys.lastChannel,
+            ], _NumberPad(device: device)),
+          );
         }
       case DeviceCategory.soundbar:
         sections
@@ -197,21 +217,15 @@ class _KeyRow extends StatelessWidget {
 }
 
 class _VolumeChannel extends StatelessWidget {
-  const _VolumeChannel({
-    required this.device,
-    required this.shown,
-    required this.channel,
-  });
+  const _VolumeChannel({required this.device, required this.channel});
 
   final SavedDevice device;
-  final Set<String> shown;
   final bool channel;
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
     Widget rocker(String up, String down, String label) {
-      shown.addAll([up, down]);
       if (!device.keys.containsKey(up) && !device.keys.containsKey(down)) {
         return const SizedBox.shrink();
       }
@@ -239,15 +253,15 @@ class _VolumeChannel extends StatelessWidget {
 }
 
 class _DPad extends StatelessWidget {
-  const _DPad({required this.device, required this.shown});
+  const _DPad({required this.device});
+
+  /// Keys the pad places.
+  static const keys = [Keys.up, Keys.down, Keys.left, Keys.right, Keys.ok];
 
   final SavedDevice device;
-  final Set<String> shown;
 
   @override
   Widget build(BuildContext context) {
-    const keys = [Keys.up, Keys.down, Keys.left, Keys.right, Keys.ok];
-    shown.addAll(keys);
     if (!keys.any(device.keys.containsKey)) return const SizedBox.shrink();
     Widget b(String k) => RemoteButton(device: device, keyName: k, size: 60);
     return Center(
@@ -269,20 +283,20 @@ class _DPad extends StatelessWidget {
 }
 
 class _ColourKeys extends StatelessWidget {
-  const _ColourKeys({required this.device, required this.shown});
+  const _ColourKeys({required this.device});
+
+  /// Keys the row places, with their accent colours.
+  static const colours = {
+    Keys.red: Color(0xFFC62828),
+    Keys.green: Color(0xFF2E7D32),
+    Keys.yellow: Color(0xFFF9A825),
+    Keys.blue: Color(0xFF1565C0),
+  };
 
   final SavedDevice device;
-  final Set<String> shown;
 
   @override
   Widget build(BuildContext context) {
-    const colours = {
-      Keys.red: Color(0xFFC62828),
-      Keys.green: Color(0xFF2E7D32),
-      Keys.yellow: Color(0xFFF9A825),
-      Keys.blue: Color(0xFF1565C0),
-    };
-    shown.addAll(colours.keys);
     final l = AppLocalizations.of(context);
     final present = [
       for (final k in colours.keys)
@@ -308,17 +322,13 @@ class _ColourKeys extends StatelessWidget {
 }
 
 class _NumberPad extends StatelessWidget {
-  const _NumberPad({required this.device, required this.shown});
+  const _NumberPad({required this.device});
 
   final SavedDevice device;
-  final Set<String> shown;
 
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    shown
-      ..addAll(Keys.digits)
-      ..add(Keys.lastChannel);
     Widget d(int i) => RemoteButton(
       device: device,
       keyName: Keys.digits[i],
@@ -380,9 +390,14 @@ class _DeviceMenu extends StatelessWidget {
       confirmLabel: l.actionSave,
       initial: device.name,
       fieldLabel: l.deviceNameLabel,
+      maxLength: maxNameLength,
     );
     if (name == null || !context.mounted) return;
-    await AppScope.of(context).devices.rename(device.id, name);
+    try {
+      await AppScope.of(context).devices.rename(device.id, name);
+    } on Object {
+      if (context.mounted) showSendError(context, l.nameSaveFailed);
+    }
   }
 
   Future<void> _chooseTransport(BuildContext context) async {
@@ -404,7 +419,7 @@ class _DeviceMenu extends StatelessWidget {
                 for (final t in transports)
                   RadioListTile<String>(
                     value: t.id,
-                    title: Text(t.displayName),
+                    title: Text(transportLabel(l, t.kind, t.displayName)),
                   ),
               ],
             ),
