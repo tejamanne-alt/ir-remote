@@ -1,0 +1,23 @@
+name: db_build
+description: Builds the code database from pinned sources with provenance.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+resolution: workspace
+
+dependencies:
+  args: ^2.7.0
+  crypto: ^3.0.8
+  path: ^1.9.1
+  sqlite3: ^3.9.1
+  code_db:
+    path: ../../packages/code_db
+  ir_core:
+    path: ../../packages/ir_core
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: '>=1.25.0 <2.0.0'

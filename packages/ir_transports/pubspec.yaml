@@ -1,0 +1,20 @@
+name: ir_transports
+description: >-
+  IrTransport implementations (Simulated, ESP32 bridge, Broadlink) plus the
+  transport registry and per-transport serial transmit queue. dart:io allowed.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+resolution: workspace
+
+dependencies:
+  pointycastle: ^4.0.0
+  ir_core:
+    path: ../ir_core
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: '>=1.25.0 <2.0.0'

@@ -1,0 +1,164 @@
+# ESP32 bridge API, v1
+
+This is the contract between `firmware/esp32_bridge` and `EspBridgeTransport` in
+`packages/ir_transports`. Both sides test against it. Changes need an ADR and a
+bump of `api` in `GET /v1/info`.
+
+## Discovery
+
+- mDNS service `_irbridge._tcp`, port 80.
+- Hostname `irbridge-<last 6 hex digits of MAC>.local`.
+- TXT records: `api=1`, `id=<12 lowercase hex MAC>`, `fw=<semver>`, `name=<user name>`.
+- Fallback: the user types the IP address.
+
+## Transport and errors
+
+- Plain HTTP on the LAN; JSON bodies (`Content-Type: application/json`), UTF-8.
+- Request bodies are capped at 16 KiB, and a longer body gets `413 too_large`.
+  `POST /v1/ota` is exempt.
+- Clients send a `Content-Length` (not chunked bodies) on JSON requests;
+  OTA requires it.
+- `POST /v1/send/raw` replies after the pattern has been sent, so the
+  client's timeout for it must be its network timeout plus the pattern's
+  duration (up to `maxPatternUs`).
+- Every error response is `{"error": "<code>", "detail": "<human text>"}`.
+
+| HTTP | `error` | When |
+| --- | --- | --- |
+| 400 | `bad_json` | Body is not valid JSON or a field has the wrong type |
+| 400 | `invalid_durations` | Empty, even count, a value ≤ 0 or > 150000, or total > `maxPatternUs` |
+| 400 | `carrier_out_of_range` | Carrier outside `carrierMinHz..carrierMaxHz` |
+| 401 | `unauthorized` | Missing or unknown token |
+| 403 | `pairing_window_closed` | `POST /v1/pair` without a recent button press |
+| 404 | `not_found` | Unknown route |
+| 426 | `upgrade_required` | `GET /v1/ws` without a WebSocket upgrade |
+| 405 | `method_not_allowed` | Known route, wrong method |
+| 409 | `busy` | A transmission is in progress (the client retries after it) |
+| 413 | `too_large` | Body over 16 KiB, or more than `maxDurations` durations |
+| 501 | `not_implemented` | `POST /v1/send/ac` on firmware built without AC encoders |
+| 500 | `storage_error` | NVS write failed while pairing |
+| 500 | `transmit_failed` | The IR transmission never started (bridge loop stalled) |
+| 507 | `pairing_full` | Already 8 paired clients; the user clears pairings with a long press |
+
+Checks run in this order: 404, then 405 (with `Allow`), 413, 401, body
+errors, then 409/403/507.
+
+## Authentication and pairing
+
+- Every route except `GET /v1/info` and `POST /v1/pair` requires
+  `Authorization: Bearer <token>`.
+- A short press on the BOOT button opens a 60 s pairing window, and the status LED
+  blinks while it is open.
+- `POST /v1/pair` with `{"client": "<device name, ≤ 32 chars>"}` returns
+  `200 {"token": "<32 lowercase hex>"}` while the window is open, then closes the
+  window. Tokens persist in NVS, up to 8 of them.
+- A long press (≥ 5 s) clears every token.
+
+## Routes
+
+### `GET /v1/info` (no auth)
+
+```json
+{
+  "api": 1,
+  "fw": "0.1.0",
+  "id": "a1b2c3d4e5f6",
+  "name": "IR Bridge",
+  "caps": {
+    "carrierMinHz": 30000,
+    "carrierMaxHz": 60000,
+    "maxPatternUs": 4000000,
+    "maxDurations": 1024,
+    "canLearn": true,
+    "ac": []
+  },
+  "pairingWindowOpen": false
+}
+```
+
+`caps.ac` lists AC protocol IDs the firmware can encode (Gate L2 option a). It is
+empty in v1.
+
+### `GET /v1/health`
+
+`200 {"ok": true, "uptimeS": 1234, "rssi": -55, "freeHeap": 123456, "learning": false}`
+
+### `POST /v1/send/raw`
+
+Request: `{"carrierHz": 38000, "durationsUs": [9024, 4512, 564, ...]}`
+
+- `durationsUs` is mark-first and odd in length. Inter-frame gaps are spaces
+  inside the list (the client flattens frames and gaps).
+- The response comes after transmission ends:
+  `200 {"sent": true, "elapsedUs": 67512}`.
+
+### `POST /v1/send/ac`
+
+Request: `{"protocol": "<id>", "model": 0, "state": <AcState JSON>}`. Returns
+`501 not_implemented` unless the firmware was built with AC encoders.
+
+### `POST /v1/learn`
+
+Request: `{"timeoutMs": 15000}` (default 15000, range 0 to 3,600,000).
+Learn mode ends after the first capture, or at
+the timeout. `timeoutMs: 0` starts capture mode, which keeps capturing until
+`DELETE /v1/learn`. That mode is the test-rig instrument.
+
+Response: `202 {"learning": true}`.
+
+### `DELETE /v1/learn`
+
+`200 {"learning": false}`
+
+### `GET /v1/ws` (WebSocket, authenticated in band)
+
+The client sends `Authorization: Bearer <token>` on the upgrade and then,
+as its first text frame:
+
+```json
+{"type": "auth", "token": "<token>"}
+```
+
+The bridge answers `{"type": "ready"}` and only then sends that session
+any other message. An unknown token closes the socket with status 1008.
+A session that has not authenticated within 5 s is closed with 1008 too.
+A server that can check the header before the handshake may answer `401`
+instead. Clients must treat 1008 and 401 as "not authorized", and must wait
+for `ready` before `POST /v1/learn`, so no capture can be missed.
+
+Why in band: some esp_http_server builds do not call the handler for the
+handshake at all, so the reference firmware cannot rely on seeing the
+upgrade headers (ADR-026). Other client frames are ignored. A peer that
+stops reading is dropped after about 1 s of blocked sends.
+
+Server-to-client messages:
+
+```json
+{"type": "capture", "carrierHz": null, "durationsUs": [9010, 4490, ...],
+ "decoded": {"protocol": "NEC", "value": "0x20DF10EF", "bits": 32}, "atMs": 123456}
+{"type": "learn_timeout"}
+{"type": "learn_stopped"}
+{"type": "ready"}
+```
+
+- `carrierHz` is `null` when the receiver module demodulates and cannot measure
+  the carrier. The app then assumes 38 kHz.
+- `decoded` is `null` when the firmware decoder does not recognise the protocol.
+  The app runs its own decoder anyway.
+- Captures start with a mark. The firmware drops the leading gap and ends a
+  capture after 100 ms of silence.
+- A capture is always re-sendable as it is: at most `maxDurations` values and
+  `maxPatternUs` in total, ending on a mark. A held key whose repeats arrive
+  closer than 100 ms is cut at the last frame that fits.
+
+### `POST /v1/ota`
+
+The body is the raw firmware image. Headers are `Authorization`,
+`X-Firmware-SHA256: <hex>` and `Content-Length`. The firmware checks the hash
+before it switches partitions. Success:
+`200 {"updated": true, "rebooting": true}`. Errors: `400 bad_request`
+(missing headers), `400 hash_mismatch`, `400 bad_image`, `500 ota_failed`,
+`409 busy` during a transmission, another update, or the restart after a
+successful update.
+The design is in `firmware/esp32_bridge/docs/ADR-ota.md`. OTA proves
+integrity, not origin (OPEN_QUESTIONS Q14).

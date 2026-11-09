@@ -1,0 +1,28 @@
+name: code_db
+description: >-
+  The bundled, read-only IR code database: schema, loader with content-hash
+  verification and the query API used by the add-device flow.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+resolution: workspace
+
+dependencies:
+  crypto: ^3.0.8
+  sqlite3: ^3.9.1
+  ir_core:
+    path: ../ir_core
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: '>=1.25.0 <2.0.0'
+
+# The bundled database ships as Flutter assets of this package
+# (packages/code_db/assets/... in the app bundle).
+flutter:
+  assets:
+    - assets/codes.sqlite
+    - assets/codes.manifest.json

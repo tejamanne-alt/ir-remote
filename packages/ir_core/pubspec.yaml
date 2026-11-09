@@ -1,0 +1,16 @@
+name: ir_core
+description: >-
+  Pure Dart IR knowledge: signal model, validation, protocol codecs,
+  Pronto and raw formats, code-set model and the AC state engine.
+  No Flutter and no dart:io imports, enforced by tools/scripts/check_purity.sh.
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+
+resolution: workspace
+
+dev_dependencies:
+  lints: ^6.1.0
+  test: '>=1.25.0 <2.0.0'

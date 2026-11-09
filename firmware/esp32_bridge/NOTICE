@@ -1,0 +1,55 @@
+IR Remote - ESP32 IR bridge firmware
+Copyright (C) 2026 IR Remote contributors
+
+This firmware is free software; you can redistribute it and/or modify it under
+the terms of the GNU Lesser General Public License as published by the Free
+Software Foundation; either version 2.1 of the License, or (at your option)
+any later version. See LICENSE for the full text of version 2.1.
+
+This firmware is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+details.
+
+The firmware is a separate program from the IR Remote mobile app. The app
+communicates with it only over the local network (docs/BRIDGE_API.md) and
+contains none of the code below.
+
+Third-party components linked into the firmware image
+(fetched by PlatformIO at build time; not copied into this repository):
+
+  IRremoteESP8266 2.9.0
+    https://github.com/crankyoldgit/IRremoteESP8266
+    GNU Lesser General Public License v2.1
+    Copyright 2009 Ken Shirriff, 2015 Mark Szabo, 2015 Sebastien Warin,
+    David Conran and the IRremoteESP8266 contributors
+
+  Arduino core for the ESP32 (espressif/arduino-esp32) 3.3.x
+    https://github.com/espressif/arduino-esp32
+    GNU Lesser General Public License v2.1
+    Copyright Espressif Systems (Shanghai) Co., Ltd. and contributors
+
+  ESP-IDF, prebuilt inside the Arduino core
+    https://github.com/espressif/esp-idf
+    Apache License 2.0; bundled components carry their own licences
+    (FreeRTOS: MIT, lwIP: BSD-3-Clause, mbedTLS: Apache-2.0, and others).
+    The HTTP and WebSocket server is ESP-IDF's esp_http_server (Apache-2.0).
+    Copyright Espressif Systems (Shanghai) Co., Ltd. and contributors
+
+Build and test tooling only (not part of the firmware image):
+  PlatformIO platform-espressif32 8.0.0 (Apache-2.0),
+  platform-native 1.2.1 (Apache-2.0), Unity test framework (MIT).
+
+LGPL compliance (applies to every published firmware binary)
+
+  The firmware image statically links the LGPL libraries above. To let users
+  relink it with modified versions of those libraries, every binary release
+  is accompanied by the complete corresponding source of this directory at the
+  release tag, including platformio.ini with the exact library versions, so
+  the image can be rebuilt with "pio run -e esp32dev" and installed over USB
+  or OTA. Devices are never locked against installing a modified image (no
+  secure boot, no flash encryption). Release bundles include LICENSE, this
+  NOTICE, and the licence texts of the linked components (LGPL-2.1,
+  Apache-2.0 and the ESP-IDF component licences).
+  Source stays available for at least three years after the last binary
+  release.
