@@ -1,0 +1,8 @@
+{
+  "name": "bridge_core",
+  "version": "0.1.0",
+  "description": "Portable request handling for the ESP32 IR bridge (API v1): routing, auth, pairing, validation, JSON, OTA verification. No Arduino or ESP-IDF dependencies.",
+  "license": "LGPL-2.1-or-later",
+  "frameworks": "*",
+  "platforms": "*"
+}
