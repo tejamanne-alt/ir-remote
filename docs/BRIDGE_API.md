@@ -15,6 +15,12 @@ bump of `api` in `GET /v1/info`.
 
 - Plain HTTP on the LAN; JSON bodies (`Content-Type: application/json`), UTF-8.
 - Request bodies are capped at 16 KiB, and a longer body gets `413 too_large`.
+  `POST /v1/ota` is exempt.
+- Clients send a `Content-Length` (not chunked bodies) on JSON requests;
+  OTA requires it.
+- `POST /v1/send/raw` replies after the pattern has been sent, so the
+  client's timeout for it must be its network timeout plus the pattern's
+  duration (up to `maxPatternUs`).
 - Every error response is `{"error": "<code>", "detail": "<human text>"}`.
 
 | HTTP | `error` | When |
@@ -25,11 +31,16 @@ bump of `api` in `GET /v1/info`.
 | 401 | `unauthorized` | Missing or unknown token |
 | 403 | `pairing_window_closed` | `POST /v1/pair` without a recent button press |
 | 404 | `not_found` | Unknown route |
+| 426 | `upgrade_required` | `GET /v1/ws` without a WebSocket upgrade |
 | 405 | `method_not_allowed` | Known route, wrong method |
 | 409 | `busy` | A transmission is in progress (the client retries after it) |
 | 413 | `too_large` | Body over 16 KiB, or more than `maxDurations` durations |
 | 501 | `not_implemented` | `POST /v1/send/ac` on firmware built without AC encoders |
+| 500 | `storage_error` | NVS write failed while pairing |
 | 507 | `pairing_full` | Already 8 paired clients; the user clears pairings with a long press |
+
+Checks run in this order: 404, then 405 (with `Allow`), 413, 401, body
+errors, then 409/403/507.
 
 ## Authentication and pairing
 
@@ -87,7 +98,8 @@ Request: `{"protocol": "<id>", "model": 0, "state": <AcState JSON>}`. Returns
 
 ### `POST /v1/learn`
 
-Request: `{"timeoutMs": 15000}`. Learn mode ends after the first capture, or at
+Request: `{"timeoutMs": 15000}` (default 15000, range 0 to 3,600,000).
+Learn mode ends after the first capture, or at
 the timeout. `timeoutMs: 0` starts capture mode, which keeps capturing until
 `DELETE /v1/learn`. That mode is the test-rig instrument.
 
@@ -119,4 +131,8 @@ Server-to-client messages:
 
 The body is the raw firmware image. Headers are `Authorization`,
 `X-Firmware-SHA256: <hex>` and `Content-Length`. The firmware checks the hash
-before it switches partitions. Details are in ADR-011.
+before it switches partitions. Success:
+`200 {"updated": true, "rebooting": true}`. Errors: `400 bad_request`
+(missing headers), `400 hash_mismatch`, `400 bad_image`, `500 ota_failed`.
+The design is in `firmware/esp32_bridge/docs/ADR-ota.md`. OTA proves
+integrity, not origin (OPEN_QUESTIONS Q14).

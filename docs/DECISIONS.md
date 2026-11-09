@@ -130,3 +130,69 @@ recovery card.
 ## ADR-016: Bridge Wi-Fi provisioning and OTA
 
 See `firmware/esp32_bridge/docs/ADR-provisioning.md` and `ADR-ota.md`.
+
+## ADR-017: Hybrid code DB — bundle the v1 key-code categories
+
+The bundled database holds every v1 key-code category from
+flipperdevices/irdb (MIT, pinned at `f7b1536`): 2,547 code sets, 1.6 MB
+gzipped. Other markets will come later from a pinned CDN URL, verified
+against the manifest's `fileSha256` before use. irdb itself suggests runtime
+access over bundling, which is why this hybrid is recorded here. probonopd/irdb
+is excluded until gate L4 is met (ADR-018).
+
+## ADR-018: irdb is excluded until its announcement issue is recorded
+
+`db_build --include-irdb` refuses to run unless THIRD_PARTY.md has a line
+`irdb announcement issue: https://github.com/probonopd/irdb/issues/<n>`.
+`tools/scripts/check_code_db.sh` checks this in CI.
+
+## ADR-019: Flipper field mappings come from data, not GPL source
+
+Flipper's documentation doesn't say how each protocol packs address and
+command. The mappings (NECext little-endian, SIRC20 split, Kaseikyo vendor
+0x2002 to Panasonic, RC5X command+64) were established by decoding the
+database's own raw captures with our decoders, and by matching against
+probonopd/irdb. The GPL firmware code was not read. Unverifiable mappings
+(NEC42, RCA, Pioneer, other Kaseikyo vendors) are skipped and counted in the
+build report.
+
+## ADR-020: Content hash over canonical rows; verify fully once
+
+The DB's identity is a SHA-256 over a canonical serialization of every row,
+stored in its `meta` table and in the manifest. The app copies the asset
+once, recomputes the full hash on that first open, and then checks only the
+stored hash (under 1 ms). A copy that fails verification is deleted, and the
+app falls back to an empty library.
+
+## ADR-021: Protocol definitions follow IrpTransmogrifier where DecodeIR differs
+
+IrpTransmogrifier's protocol list is the maintained successor of DecodeIR.
+Where they differ, it wins: the NECx subdevice default is 255-D, and the
+NECx1 repeat carries ~D:1. Only the IRP notation, a protocol description, is
+used. No IrpTransmogrifier code (GPL-3) is used.
+
+## ADR-022: Backups exclude pairing tokens and replace all data
+
+A backup is canonical JSON, so export → wipe → import → export is
+byte-identical. Hub tokens are credentials, so they are never exported;
+hubs are re-paired after a restore. An import validates everything first,
+then replaces all data in one transaction.
+
+## ADR-023: Bridge contract clarified from the firmware build
+
+`docs/BRIDGE_API.md` now states the check order, the OTA exemption from the
+16 KiB body cap and the OTA status codes, plus `426 upgrade_required`,
+`500 storage_error` and the `timeoutMs` range. It also requires
+`Content-Length` on JSON bodies and a send timeout of network timeout plus
+pattern length. The client already follows all of this: `EspBridgeTransport`
+sends a fixed length, and its send timeout scales with the chunk. Separately,
+`QueuedTransport` limits now scale with on-air time, so a legal 4 s pattern
+is never reported as a timeout. API version stays 1, because only
+previously unspecified behaviour was defined.
+
+## ADR-024: Hubs are LAN-only, everywhere
+
+`isLanHost` (RFC 1918, link-local, ULA, loopback, `.local`) is checked for
+typed addresses, discovered services, backup imports and stored rows before
+any transport is created. A crafted backup therefore cannot make the app
+contact an internet host.

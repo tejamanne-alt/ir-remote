@@ -63,3 +63,55 @@ BSD-3). **Recommendation:** move them in M8 hardening.
 
 The Account Holder must request `com.apple.developer.networking.multicast`.
 Until it is granted, Broadlink on iOS works by typed IP only (ADR-015).
+
+## Q9. Code coverage gaps in the bundled database
+
+At the pinned flipperdevices/irdb commit there is **no air-conditioner
+category**, and **none of the five set-top-box operators** (Tata Play, Airtel
+Digital TV, Dish TV, d2h, Sun Direct) or OnePlus TVs. **Options:** (a) open
+the irdb announcement issue (Q6) and include probonopd/irdb, which has some
+STB sets; (b) human captures of operator remotes through bridge learn mode,
+contributed as user-owned data; (c) both. **Recommendation:** (c). Until
+then, those devices work through "Not listed", learning, or Pronto/Flipper
+import.
+
+## Q10. Ranking lists for fan, projector, soundbar and purifier
+
+The contract ranks only TV, STB and AC brands, so other categories sort
+alphabetically. Please supply ranking lists if wanted.
+
+## Q11. Missing codecs in the source data
+
+Skipped at build: NEC42 (4,066 signals), RCA (1,172), Pioneer (641) and
+NEC42ext (32). Adding clean-room codecs for these from published IRP would
+recover them. **Recommendation:** add NEC42 and Pioneer in M8 if the matrix
+shows demand. They aren't in the contract's v1 codec list.
+
+## Q12. LGPL-3.0 in the bridge firmware
+
+ESPAsyncWebServer and AsyncTCP are LGPL-3.0, which is beyond the LGPL-2.1
+plan and outside the L5 allow-list. They live only in the firmware binary,
+never in the app. LGPL-3.0 adds an "installation information" duty if
+pre-flashed units ship (for example a unit sent to App Review).
+**Options:** (a) accept, publish firmware source and the build steps, and
+document reflashing; (b) switch to ESP-IDF's own HTTP server (Apache-2.0).
+**Recommendation:** (b) before units ship; (a) is fine for DIY builds.
+
+## Q13. The bridge setup network is open
+
+The SoftAP setup portal has no password, so the home Wi-Fi password crosses
+the air once, during setup. **Options:** accept that for v1, or print a
+per-device setup password on a label. **Recommendation:** per-device password
+before units ship.
+
+## Q14. Bridge OTA proves integrity, not origin
+
+Any paired client can flash firmware whose SHA-256 matches what it claims.
+Signed images (designed in `firmware/esp32_bridge/docs/ADR-ota.md`) need a
+contract change. **Recommendation:** signed images before any bridge is
+distributed to others.
+
+## Q15. Duplicate pairing names
+
+Pairing again with the same client name takes a new slot, up to 8. Fine for
+v1? **Recommendation:** yes. A long press clears every slot.

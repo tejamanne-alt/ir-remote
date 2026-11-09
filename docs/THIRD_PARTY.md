@@ -18,7 +18,7 @@ binary (marked "not shipped").
 
 | Source | Pinned commit | License (verified) | Used | Required notice |
 | --- | --- | --- | --- | --- |
-| [flipperdevices/irdb](https://github.com/flipperdevices/irdb) | `f7b15366521cc81ba11b341538f0097bddbb748b` | see code_db build report | bundled code sets | per its LICENSE |
+| [flipperdevices/irdb](https://github.com/flipperdevices/irdb) | `f7b15366521cc81ba11b341538f0097bddbb748b` | MIT, "Copyright (c) Flipper Zero" (LICENSE sha256 `e368c2c4…`, re-verified by `db_build` at every build) | bundled in `packages/code_db/assets/codes.sqlite` (2,547 code sets) | MIT text, stored in the DB and shown on the Licenses screen |
 | [probonopd/irdb](https://github.com/probonopd/irdb) | `11aa5eb3ad9fec9e5c03f170c29c1467733d9f3e` | irdb License (custom, conditions) | excluded until L4 is met | "Contains/accesses irdb by Simon Peter and contributors, used under permission. For licensing details and for information on how to contribute to the database, see https://github.com/probonopd/irdb" |
 | [UberGuidoZ/Flipper-IRDB](https://github.com/UberGuidoZ/Flipper-IRDB) | n/a | CC0 only for later contributions | excluded in v1 (OPEN_QUESTIONS Q5) | n/a |
 | User captures | n/a | user-owned | stay on the device | n/a |
@@ -35,9 +35,21 @@ binary (marked "not shipped").
 
 ## Firmware (separate binary, own LICENSE)
 
-See `firmware/esp32_bridge/README.md` ("Third-party"). IRremoteESP8266 is
-LGPL-2.1: it is linked only into the bridge firmware, never into the app
-(gate L2), and firmware source is published with every bridge release.
+Linked only into the bridge firmware, never into the app (gate L2).
+Firmware source (LGPL-2.1-or-later) is published with every bridge release.
+Details are in `firmware/esp32_bridge/README.md` ("Third-party").
+Versions are pinned in `platformio.ini`, but have not been resolved against
+the PlatformIO registry from this sandbox; CI resolves them.
+
+| Component | Version | License | Use |
+| --- | --- | --- | --- |
+| [IRremoteESP8266](https://github.com/crankyoldgit/IRremoteESP8266) | 2.9.0 | LGPL-2.1 | IR send and receive (firmware only) |
+| [ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer) | 3.12.1 | LGPL-3.0 | HTTP and WebSocket server (firmware only; OPEN_QUESTIONS Q12) |
+| [AsyncTCP](https://github.com/ESP32Async/AsyncTCP) | 3.5.0 | LGPL-3.0 | TCP for the web server (firmware only; Q12) |
+| [Arduino-ESP32](https://github.com/espressif/arduino-esp32) | 3.3.x | LGPL-2.1 | WiFi, Preferences, DNSServer, ESPmDNS (firmware only) |
+| [ESP-IDF](https://github.com/espressif/esp-idf) | bundled | Apache-2.0 plus component licences | SDK (firmware only) |
+| platform-espressif32 / platform-native | 8.0.0 / 1.2.1 | Apache-2.0 | build tools |
+| [Unity](https://github.com/ThrowTheSwitch/Unity) | via PlatformIO | MIT | firmware tests only |
 
 ## Dart packages
 

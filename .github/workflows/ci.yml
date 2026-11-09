@@ -1,0 +1,215 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 21 * * *" # nightly: fuzz, firmware, full builds
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: "3.47.9"
+
+jobs:
+  inner-loop:
+    name: Format, analyze, test, gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Install SQLite (code_db and drift tests)
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - name: Resolve workspace
+        run: flutter pub get
+      - name: Format
+        run: dart format --output=none --set-exit-if-changed packages tools/check_licenses tools/db_build apps/remote/lib apps/remote/test
+      - name: ir_core purity
+        run: tools/scripts/check_purity.sh
+      - name: Licenses (gate L5)
+        run: dart run check_licenses
+      - name: Golden fixtures are current
+        run: python3 tools/fixtures/irp_oracle.py --check
+      - name: CLAUDE.md under 200 lines
+        run: test "$(wc -l < docs/CLAUDE.md)" -le 200
+      - name: ir_core
+        working-directory: packages/ir_core
+        run: dart analyze --fatal-infos && dart test --coverage-path=coverage/lcov.info
+      - name: M1 gate (codec coverage >= 95%)
+        run: python3 tools/scripts/coverage_gate.py packages/ir_core/coverage/lcov.info lib/src/codecs/ 95
+      - name: ir_transports
+        working-directory: packages/ir_transports
+        run: dart analyze --fatal-infos && dart test
+      - name: code_db
+        working-directory: packages/code_db
+        run: dart analyze --fatal-infos && dart test
+      - name: db_build
+        working-directory: tools/db_build
+        run: dart analyze --fatal-infos && dart test
+      - name: check_licenses
+        working-directory: tools/check_licenses
+        run: dart analyze --fatal-infos && dart test
+      - name: Generated code is current
+        working-directory: apps/remote
+        run: |
+          dart run build_runner build
+          flutter gen-l10n
+          git diff --exit-code -- lib test
+      - name: App analyze and tests
+        working-directory: apps/remote
+        run: flutter analyze && flutter test
+      - name: Bundled code DB (gates L1, L4, reproducible hash)
+        run: tools/scripts/check_code_db.sh
+
+  android:
+    name: Android debug build
+    runs-on: ubuntu-latest
+    needs: inner-loop
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Build debug APK
+        working-directory: apps/remote
+        run: flutter build apk --debug
+      - name: Manifest declares IR as optional
+        run: |
+          grep -q 'android.permission.TRANSMIT_IR' apps/remote/android/app/src/main/AndroidManifest.xml
+          grep -q 'android.hardware.consumerir" android:required="false"' apps/remote/android/app/src/main/AndroidManifest.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: apps/remote/build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 7
+
+  ios:
+    name: iOS build (no signing)
+    runs-on: macos-latest
+    needs: inner-loop
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Build iOS without codesigning
+        working-directory: apps/remote
+        run: flutter build ios --debug --no-codesign
+      - name: Info.plist declares local network use and Bonjour service
+        run: |
+          plutil -extract NSLocalNetworkUsageDescription raw apps/remote/ios/Runner/Info.plist
+          plutil -extract NSBonjourServices.0 raw apps/remote/ios/Runner/Info.plist | grep -q '_irbridge._tcp'
+
+  firmware:
+    name: ESP32 bridge firmware
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: firmware/esp32_bridge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Host tests (g++ with sanitizers)
+        run: tools/run_host_tests.sh
+      - name: Install PlatformIO
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[firmware]')
+        run: pip install platformio
+      - name: Native unit tests (Unity)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[firmware]')
+        run: pio test -e native
+      - name: Build firmware
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[firmware]')
+        run: pio run -e esp32dev
+
+  integration-android:
+    name: Integration test on an Android emulator (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: cd apps/remote && flutter test integration_test
+
+  integration-ios:
+    name: Integration test on an iOS simulator (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - name: Boot a simulator and run
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys;d=json.load(sys.stdin)['devices'];print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']))")
+          xcrun simctl boot "$UDID"
+          cd apps/remote && flutter test integration_test -d "$UDID"
+
+  nightly-fuzz:
+    name: Nightly extended fuzzing
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - run: flutter pub get
+      - name: Parser fuzz suites (Pronto, raw, Flipper, irdb, Broadlink, bridge JSON)
+        run: |
+          (cd packages/ir_core && dart test)
+          (cd packages/ir_transports && dart test)
+          (cd packages/code_db && dart test)
