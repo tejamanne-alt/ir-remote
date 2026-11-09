@@ -36,6 +36,15 @@ final class DiscoveredBridge {
   final String? id;
 }
 
+/// Thrown when a hub address is outside the local network.
+final class NotLanAddressException implements Exception {
+  /// Creates the exception.
+  const NotLanAddressException();
+
+  @override
+  String toString() => 'Hubs must be on your local network.';
+}
+
 /// Finds ESP32 bridges on the LAN.
 abstract interface class BridgeDiscovery {
   /// Emits the current list of bridges while listened to; cancelling stops
@@ -93,7 +102,7 @@ final class BonsoirBridgeDiscovery implements BridgeDiscovery {
                   (a) => a.contains('.') && !a.contains(':'),
                   orElse: () => addresses.isEmpty ? '' : addresses.first,
                 );
-                if (host.isEmpty) return;
+                if (host.isEmpty || !isLanHost(host)) return;
                 found[s.name] = DiscoveredBridge(
                   name: s.attributes['name'] ?? s.name,
                   host: host,
@@ -165,7 +174,18 @@ final class HubService extends ChangeNotifier {
   List<HubRecord> get hubs => _hubs;
 
   /// The default factory: ESP32 bridge or Broadlink hub.
-  static IrTransport defaultHubTransport(HubRecord h) => switch (h.kind) {
+  static IrTransport defaultHubTransport(HubRecord h) {
+    if (!isLanHost(h.host)) {
+      // Never open sockets outside the LAN, even for a hub restored from a
+      // crafted backup.
+      throw UnsupportedError(
+        'hub address ${h.host} is not on the local network',
+      );
+    }
+    return _transportFor(h);
+  }
+
+  static IrTransport _transportFor(HubRecord h) => switch (h.kind) {
     TransportKind.espBridge => EspBridgeTransport(
       baseUri: Uri(scheme: 'http', host: h.host, port: h.port),
       id: h.id,
@@ -203,6 +223,7 @@ final class HubService extends ChangeNotifier {
   /// Probes a Broadlink hub with a unicast hello (the primary path: iOS
   /// cannot broadcast without Apple's multicast entitlement).
   static Future<HubRecord> probeBroadlink(String host) async {
+    if (!isLanHost(host)) throw const NotLanAddressException();
     final t = await BroadlinkTransport.connect(InternetAddress(host));
     try {
       final d = t.device;
@@ -252,6 +273,7 @@ final class HubService extends ChangeNotifier {
   /// Adds an ESP32 bridge at [host]:[port] (unpaired) after reading its
   /// info. Throws [BridgeException], [FormatException] or I/O errors.
   Future<HubRecord> addEspBridge(String host, {int port = 80}) async {
+    if (!isLanHost(host)) throw const NotLanAddressException();
     final probe = EspBridgeTransport(
       baseUri: Uri(scheme: 'http', host: host, port: port),
       id: 'probe',
@@ -275,6 +297,7 @@ final class HubService extends ChangeNotifier {
   /// Pairs an ESP32 bridge while its button window is open. Throws
   /// [BridgeException] with code `pairing_window_closed` otherwise.
   Future<void> pairEspBridge(HubRecord hub, String clientName) async {
+    if (!isLanHost(hub.host)) throw const NotLanAddressException();
     final t = EspBridgeTransport(
       baseUri: Uri(scheme: 'http', host: hub.host, port: hub.port),
       id: hub.id,

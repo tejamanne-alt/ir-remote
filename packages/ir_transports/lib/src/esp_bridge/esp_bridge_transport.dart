@@ -247,6 +247,9 @@ final class EspBridgeTransport implements IrTransport {
         await _request(
           'POST',
           '/v1/send/raw',
+          // The bridge answers after the pattern has been sent, so allow
+          // for its length on top of the network timeout.
+          timeout: requestTimeout + Duration(microseconds: chunk.lengthUs),
           body: {
             'carrierHz': chunk.carrierHz,
             'durationsUs': chunk.durationsUs,
@@ -451,6 +454,7 @@ final class EspBridgeTransport implements IrTransport {
     String path, {
     Object? body,
     bool auth = true,
+    Duration? timeout,
   }) async {
     Future<Object?> run() async {
       final req = await _http.openUrl(method, baseUri.replace(path: path));
@@ -458,7 +462,13 @@ final class EspBridgeTransport implements IrTransport {
       if (auth && token != null) {
         req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
       }
-      if (body != null) req.write(jsonEncode(body));
+      if (body != null) {
+        // A fixed Content-Length, not chunked encoding: embedded HTTP
+        // servers handle it more reliably.
+        final bytes = utf8.encode(jsonEncode(body));
+        req.contentLength = bytes.length;
+        req.add(bytes);
+      }
       final res = await req.close();
       final bytes = <int>[];
       await for (final chunk in res) {
@@ -481,7 +491,7 @@ final class EspBridgeTransport implements IrTransport {
       return json;
     }
 
-    return run().timeout(requestTimeout);
+    return run().timeout(timeout ?? requestTimeout);
   }
 
   static String _describe(Object e) => switch (e) {

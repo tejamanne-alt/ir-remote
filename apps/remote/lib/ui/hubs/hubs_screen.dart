@@ -239,7 +239,7 @@ class _AddHubScreenState extends State<AddHubScreen> {
   Future<void> _addManual() async {
     final l = AppLocalizations.of(context);
     final host = _address.text.trim();
-    if (!isValidIpv4(host)) {
+    if (!isValidIpv4(host) || !isLanHost(host)) {
       setState(() => _error = l.hubAddressError);
       return;
     }

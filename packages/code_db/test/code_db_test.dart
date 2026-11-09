@@ -83,7 +83,11 @@ CodeDbContent _content({List<CodeDbEntry>? entries}) => CodeDbContent(
         ),
         CodeDbEntry(
           _set('tv-samsung', 'Samsung', DeviceCategory.tv, {
-            Keys.power: const ProtocolKeyCode('Samsung32', {'D': 7, 'F': 2}),
+            Keys.power: const ProtocolKeyCode('Samsung32', {
+              'D': 7,
+              'S': 7,
+              'F': 2,
+            }),
           }, label: 'BN59'),
         ),
         CodeDbEntry(

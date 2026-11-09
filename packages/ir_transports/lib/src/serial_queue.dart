@@ -122,6 +122,15 @@ final class QueuedTransport implements IrTransport {
   /// the queue forever.
   Duration get holdLimit => timeout * 4;
 
+  /// Total on-air time of [signal] with [repeats], gaps included.
+  static int airTimeUs(IrSignal signal, int repeats) {
+    var t = 0;
+    for (final f in signal.frames(repeats: repeats)) {
+      t += f.frame.fold(0, (a, b) => a + b) + f.gapAfterUs;
+    }
+    return t;
+  }
+
   @override
   Future<TransmitResult> transmit(IrSignal signal, {int repeats = 0}) async {
     final enqueued = DateTime.now();
@@ -136,17 +145,18 @@ final class QueuedTransport implements IrTransport {
             // The caller hears about a timeout at [timeout]; the queue keeps
             // waiting for the inner call (up to [holdLimit]) so the hardware is
             // idle before the next transmission starts.
-            final timer = Timer(
-              timeout,
-              () => answer(TransmitTimeout(timeout)),
-            );
+            // Both limits grow with the signal's own on-air time, so a long
+            // legitimate hold is never reported as a timeout.
+            final onAir = Duration(microseconds: airTimeUs(signal, repeats));
+            final limit = timeout + onAir;
+            final timer = Timer(limit, () => answer(TransmitTimeout(limit)));
             try {
               answer(
                 await inner
                     .transmit(signal, repeats: repeats)
                     .timeout(
-                      holdLimit,
-                      onTimeout: () => TransmitTimeout(timeout),
+                      holdLimit + onAir,
+                      onTimeout: () => TransmitTimeout(limit),
                     ),
               );
             } catch (e) {

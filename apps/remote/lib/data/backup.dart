@@ -10,6 +10,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:ir_core/ir_core.dart';
+import 'package:ir_transports/ir_transports.dart' show isLanHost;
 
 import 'database.dart';
 import 'macros.dart';
@@ -271,6 +272,10 @@ final class BackupCodec {
       if (!const {'espBridge', 'broadlink'}.contains(kind)) {
         throw FormatException('unknown hub kind $kind');
       }
+      final host = _str(hm['host'], 'hub.host', max: 253);
+      if (!isLanHost(host)) {
+        throw FormatException('hub.host $host is not a local-network address');
+      }
       final port = _int(hm['port'], 'hub.port');
       if (port < 1 || port > 65535) {
         throw const FormatException('hub.port out of range');
@@ -282,7 +287,7 @@ final class BackupCodec {
           id: _str(hm['id'], 'hub.id', max: 64),
           kind: kind,
           name: _str(hm['name'], 'hub.name', max: 64),
-          host: _str(hm['host'], 'hub.host', max: 253),
+          host: host,
           port: port,
           extra: Value(extra == null ? null : jsonEncode(extra)),
           addedAt: _date(hm['addedAt'], 'hub.addedAt'),

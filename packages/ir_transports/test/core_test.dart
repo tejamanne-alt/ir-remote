@@ -60,6 +60,40 @@ final class _SlowTransport implements IrTransport {
 }
 
 void main() {
+  group('isLanHost', () {
+    test('accepts private, link-local, loopback and .local addresses', () {
+      for (final h in [
+        '10.0.0.5',
+        '172.16.0.1',
+        '172.31.255.255',
+        '192.168.1.40',
+        '169.254.10.2',
+        '127.0.0.1',
+        'fe80::1',
+        'fd12:3456::1',
+        '::1',
+        'irbridge-a1b2c3.local',
+      ]) {
+        expect(isLanHost(h), isTrue, reason: h);
+      }
+    });
+
+    test('rejects public addresses and internet hostnames', () {
+      for (final h in [
+        '8.8.8.8',
+        '172.32.0.1',
+        '100.64.0.1',
+        '2001:4860::8888',
+        'example.com',
+        'evil.local.example.com',
+        '',
+        'not an address',
+      ]) {
+        expect(isLanHost(h), isFalse, reason: h);
+      }
+    });
+  });
+
   group('SerialQueue', () {
     test('runs tasks strictly in order, one at a time', () async {
       final q = SerialQueue();
@@ -121,7 +155,9 @@ void main() {
     });
 
     test('a timeout answers the caller but still holds the queue', () async {
-      final inner = _SlowTransport(const Duration(milliseconds: 60));
+      // NEC is ~108 ms on air, so the caller's limit is 20 + 108 ms and the
+      // queue is held for up to 80 + 108 ms; a 160 ms call lands between.
+      final inner = _SlowTransport(const Duration(milliseconds: 160));
       final q = QueuedTransport(
         inner,
         timeout: const Duration(milliseconds: 20),
@@ -132,6 +168,24 @@ void main() {
       expect(q.holdLimit, const Duration(milliseconds: 80));
       expect(await second, isA<TransmitTimeout>());
       expect(inner.maxInFlight, 1, reason: 'second must wait for the first');
+    });
+
+    test('the timeout grows with the signal on-air time', () async {
+      // 40 ms of transmission against a 20 ms base timeout is not a timeout.
+      final inner = _SlowTransport(const Duration(milliseconds: 40));
+      final q = QueuedTransport(
+        inner,
+        timeout: const Duration(milliseconds: 20),
+      );
+      final long = IrSignal(
+        carrierHz: 38000,
+        durationsUs: [for (var i = 0; i < 9; i++) 6000],
+      );
+      expect(
+        QueuedTransport.airTimeUs(long, 0),
+        54000 + IrSignal.defaultTrailingGapUs,
+      );
+      expect(await q.transmit(long), isA<TransmitSent>());
     });
 
     test('exceptions become transportUnavailable and are recorded', () async {

@@ -180,6 +180,12 @@ void main() {
           }),
           jsonEncode({
             ...good,
+            'hubs': [
+              {...(good['hubs']! as List).first as Map, 'host': 'example.com'},
+            ],
+          }),
+          jsonEncode({
+            ...good,
             'macros': [
               {
                 'id': 'm',

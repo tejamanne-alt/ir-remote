@@ -21,6 +21,8 @@ final class FakeBridge {
   Duration sendDelay = Duration.zero;
   bool silent = false;
   String? rawInfo;
+  int lastContentLength = -1;
+  bool lastChunked = false;
 
   Uri get uri => Uri.parse('http://127.0.0.1:${_server.port}');
 
@@ -50,6 +52,8 @@ final class FakeBridge {
     final path = r.uri.path;
     final authed =
         r.headers.value(HttpHeaders.authorizationHeader) == 'Bearer $_token';
+    lastContentLength = r.contentLength;
+    lastChunked = r.headers.chunkedTransferEncoding;
     final text = await utf8.decodeStream(r);
     Object? body;
     if (text.isNotEmpty) body = jsonDecode(text);
@@ -257,6 +261,23 @@ void main() {
       final r = await client.transmit(nec);
       expect((r as TransmitRejected).detail, contains('pair it again'));
       expect(await client.health(), isA<Degraded>());
+    });
+
+    test('a long pattern gets time to transmit before the reply', () async {
+      // The bridge replies after transmitting; 600 ms of pattern must not
+      // trip a 500 ms network timeout.
+      bridge.sendDelay = const Duration(milliseconds: 650);
+      final long = IrSignal(
+        carrierHz: 38000,
+        durationsUs: [for (var i = 0; i < 61; i++) i.isEven ? 10000 : 10000],
+      );
+      expect(await client.transmit(long), isA<TransmitSent>());
+    });
+
+    test('requests carry a Content-Length instead of chunked bodies', () async {
+      expect(await client.transmit(nec), isA<TransmitSent>());
+      expect(bridge.lastContentLength, greaterThan(0));
+      expect(bridge.lastChunked, isFalse);
     });
 
     test('health reports latency', () async {

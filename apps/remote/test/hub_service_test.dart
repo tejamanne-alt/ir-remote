@@ -19,7 +19,7 @@ void main() {
         id: 'esp:a1',
         kind: TransportKind.espBridge,
         name: 'Hall',
-        host: '192.0.2.10',
+        host: '192.168.1.10',
         port: 80,
       ),
       DateTime.utc(2026),
@@ -29,7 +29,7 @@ void main() {
         id: 'broadlink:aa:bb:cc:dd:ee:ff',
         kind: TransportKind.broadlink,
         name: 'Bedroom RM4',
-        host: '192.0.2.11',
+        host: '192.168.1.11',
         port: 80,
         extra: {'mac': 'aa:bb:cc:dd:ee:ff', 'devtype': 0x51da},
       ),
@@ -75,7 +75,7 @@ void main() {
               port: 80,
               extra: const {'mac': '01:02:03:04:05:06', 'devtype': 0x51da},
             );
-      final r = await hubs.addBroadlink('192.0.2.20');
+      final r = await hubs.addBroadlink('192.168.1.20');
       expect(hubs.hubs.single.id, r.id);
       expect(registry.byId(r.id), isNotNull);
       await devices.save(
@@ -93,4 +93,35 @@ void main() {
       expect((await devices.load('d'))!.transportId, isNull);
     },
   );
+
+  test('hubs outside the local network are refused everywhere', () async {
+    final db = memoryDb();
+    addTearDown(db.close);
+    final registry = TransportRegistry();
+    addTearDown(registry.dispose);
+    final repo = HubRepository(db);
+    final hubs = HubService(
+      repo: repo,
+      registry: registry,
+      devices: DeviceRepository(db),
+    );
+    await expectLater(
+      hubs.addEspBridge('8.8.8.8'),
+      throwsA(isA<NotLanAddressException>()),
+    );
+    // A hub row that points outside the LAN (for example from a crafted
+    // backup) is kept but never gets a transport.
+    await repo.upsert(
+      const HubRecord(
+        id: 'esp:evil',
+        kind: TransportKind.espBridge,
+        name: 'Evil',
+        host: 'example.com',
+        port: 80,
+      ),
+      DateTime.utc(2026),
+    );
+    await hubs.loadAll();
+    expect(registry.byId('esp:evil'), isNull);
+  });
 }
