@@ -1,0 +1,113 @@
+{
+  "sources": {
+    "flipperdevices/irdb": {
+      "commit": "f7b15366521cc81ba11b341538f0097bddbb748b",
+      "commitDate": "2026-04-24",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "licenseSha256": "e368c2c4c2a508f4d07fb13c501558633d68a43dd6e7751101acd95558f80eac",
+      "files": {
+        "seen": 5433,
+        "imported": 4472,
+        "excluded": {
+          "categoryNotInV1:Camera": 24,
+          "categoryNotInV1:DVD": 769,
+          "noImportableSignals": 168
+        }
+      },
+      "signals": {
+        "imported": 142308,
+        "skipped": {
+          "duplicateKeyName": 480,
+          "duplicateKeySameCode": 1297,
+          "durationOver150ms:raw": 3,
+          "outOfRange": 8,
+          "unsupportedProtocol:Kaseikyo": 168,
+          "unsupportedProtocol:NEC42": 4066,
+          "unsupportedProtocol:NEC42ext": 32,
+          "unsupportedProtocol:Pioneer": 641,
+          "unsupportedProtocol:RCA": 1172
+        },
+        "skippedTotal": 7867
+      },
+      "keys": {
+        "normalized": 94835,
+        "custom": 47473,
+        "viaSourceAlias": 2091
+      }
+    }
+  },
+  "excludedSources": {
+    "UberGuidoZ/Flipper-IRDB": "excluded in v1: its CC0 grant covers only contributions after a specific commit",
+    "probonopd/irdb": "not requested (--include-irdb not given)"
+  },
+  "gates": {
+    "L1": "pass: every code set and source has all provenance fields",
+    "L4": "irdb not included"
+  },
+  "codeSets": {
+    "candidates": 4472,
+    "outsideBundledSubset": 0,
+    "beforeDedupe": 4472,
+    "duplicatesMerged": 1925,
+    "afterDedupe": 2547,
+    "byCategory": {
+      "tv": 1432,
+      "setTopBox": 140,
+      "fan": 262,
+      "projector": 329,
+      "soundbar": 373,
+      "airPurifier": 11
+    },
+    "brandsByCategory": {
+      "tv": 577,
+      "setTopBox": 90,
+      "fan": 129,
+      "projector": 124,
+      "soundbar": 176,
+      "airPurifier": 6
+    },
+    "rankedBrands": {
+      "tv": {
+        "Samsung": 45,
+        "LG": 26,
+        "Sony": 20,
+        "Xiaomi": 1,
+        "OnePlus": 0,
+        "TCL": 5,
+        "Hisense": 20,
+        "Vu": 1,
+        "Panasonic": 20,
+        "Philips": 22
+      },
+      "setTopBox": {
+        "Tata Play": 0,
+        "Airtel Digital TV": 0,
+        "Dish TV": 0,
+        "d2h": 0,
+        "Sun Direct": 0
+      },
+      "airConditioner": {
+        "Voltas": 0,
+        "LG": 0,
+        "Samsung": 0,
+        "Daikin": 0,
+        "Blue Star": 0,
+        "Lloyd": 0,
+        "Panasonic": 0,
+        "Hitachi": 0
+      }
+    }
+  },
+  "database": {
+    "file": "codes.sqlite",
+    "bytes": 7352320,
+    "gzipBytes": 1606273,
+    "contentSha256": "1b5fa6168fd2650cf8cb3520c35c48e8f2ef37a182b2c5de05401c85c99ded03",
+    "fileSha256": "ca6512ac0118d364c121af103a033ecab39176786623fab9ad348400c434c0e0",
+    "schemaVersion": 1,
+    "sqliteVersion": "3.54.1",
+    "brands": 945,
+    "keyCodes": 73707
+  }
+}

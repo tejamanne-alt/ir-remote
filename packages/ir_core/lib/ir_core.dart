@@ -21,6 +21,8 @@ export 'src/codecs/timing.dart' show TimingTolerance;
 export 'src/codecs/toggle.dart';
 export 'src/codeset/code_set.dart';
 export 'src/command/keys.dart';
+export 'src/formats/flipper_ir.dart';
+export 'src/formats/irdb_csv.dart';
 export 'src/formats/pronto.dart';
 export 'src/formats/raw.dart';
 export 'src/signal/ir_signal.dart';

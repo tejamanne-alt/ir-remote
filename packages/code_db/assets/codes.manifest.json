@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "file": "codes.sqlite",
+  "contentSha256": "1b5fa6168fd2650cf8cb3520c35c48e8f2ef37a182b2c5de05401c85c99ded03",
+  "fileSha256": "ca6512ac0118d364c121af103a033ecab39176786623fab9ad348400c434c0e0",
+  "fileBytes": 7352320,
+  "sources": [
+    {
+      "name": "flipperdevices/irdb",
+      "url": "https://github.com/flipperdevices/irdb",
+      "commit": "f7b15366521cc81ba11b341538f0097bddbb748b",
+      "license": "MIT",
+      "importedAt": "2026-04-24"
+    }
+  ],
+  "counts": {
+    "codeSets": 2547,
+    "brands": 945,
+    "keyCodes": 73707,
+    "mergedDuplicates": 1925,
+    "codeSets.tv": 1432,
+    "codeSets.setTopBox": 140,
+    "codeSets.fan": 262,
+    "codeSets.projector": 329,
+    "codeSets.soundbar": 373,
+    "codeSets.airPurifier": 11,
+    "brands.tv": 577,
+    "brands.setTopBox": 90,
+    "brands.fan": 129,
+    "brands.projector": 124,
+    "brands.soundbar": 176,
+    "brands.airPurifier": 6
+  }
+}
